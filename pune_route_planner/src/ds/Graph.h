@@ -38,6 +38,7 @@ struct Place {
     double x = 0.0;
     double y = 0.0;
     int index = -1;
+    bool attraction = true;
 
     bool has_category(const std::string& cat) const {
         for (const auto& c : categories) {
@@ -60,6 +61,8 @@ struct Road {
     double crowd = 0.0;    // 0 .. 10
     double traffic = 0.0;  // 0 .. 10
     bool blocked = false;
+    std::string osm_way;
+    std::string name;
 
     // Derived effective travel time t = base_time * (1 + traffic / 10.0)
     double effective_time_min() const {
@@ -83,6 +86,16 @@ private:
 
 public:
     Graph() = default;
+    bool real_data = false;
+    struct Turn { std::string from_way, to_way; bool only; };
+    HashMap<std::string, DynArray<Turn>> turns;
+    bool turn_allowed(int via, const std::string& from, const std::string& to) const {
+        const auto* rules = turns.find(get_place(via).id);
+        if (!rules || from.empty()) return true;
+        for (const auto& r : *rules) if (r.from_way == from && ((r.only && r.to_way != to) || (!r.only && r.to_way == to))) return false;
+        return true;
+    }
+    void add_alias(const std::string& id, int idx) { place_to_index_.insert(id, idx); }
 
     uint64_t version() const noexcept { return version_; }
     void bump_version() noexcept { ++version_; }

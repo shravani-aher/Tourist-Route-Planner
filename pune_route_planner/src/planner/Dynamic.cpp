@@ -10,7 +10,7 @@
 namespace planner {
 
 DynamicManager::DynamicManager(ds::Graph& g) : graph_(g) {
-    init_default_events();
+    if (!graph_.real_data) init_default_events();
 }
 
 void DynamicManager::set_active_query(const RouteQuery& q, const RouteResult& initial_route) {
@@ -308,7 +308,7 @@ bool DynamicManager::trigger_next_simulated_event(
     std::string& error_msg
 ) {
     if (event_queue_.empty()) {
-        init_default_events();
+        if (!graph_.real_data) init_default_events();
     }
 
     SimulatedEvent ev = event_queue_.pop();

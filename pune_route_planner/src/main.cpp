@@ -12,6 +12,9 @@
 #include "ds/Trie.h"
 #include "ds/Sort.h"
 #include "planner/Models.h"
+#include "planner/Dataset.h"
+static util::JsonValue dataset_metadata;
+static bool test_fixture=false;
 #include "planner/Scoring.h"
 #include "planner/Dijkstra.h"
 #include "planner/Alternatives.h"
@@ -138,12 +141,12 @@ static util::JsonValue serialize_route(const planner::RouteResult& r, const ds::
     obj["mode_label"] = r.mode_label;
     obj["total_distance_km"] = r.total_distance_km;
     obj["total_travel_time_min"] = r.total_travel_time_min;
-    obj["total_visit_time_min"] = r.total_visit_time_min;
+    obj["total_visit_time_min"] = graph.real_data ? util::JsonValue::null() : util::JsonValue(r.total_visit_time_min);
     obj["total_time_min"] = r.total_time_min;
-    obj["avg_scenic"] = r.avg_scenic;
-    obj["avg_crowd"] = r.avg_crowd;
+    obj["avg_scenic"] = graph.real_data ? util::JsonValue::null() : util::JsonValue(r.avg_scenic);
+    obj["avg_crowd"] = graph.real_data ? util::JsonValue::null() : util::JsonValue(r.avg_crowd);
     obj["balanced_cost"] = r.balanced_cost;
-    obj["demo_index"] = r.demo_index;
+    obj["demo_index"] = graph.real_data ? util::JsonValue::null() : util::JsonValue(r.demo_index);
 
     util::JsonValue nodes_arr = util::JsonValue::array();
     for (size_t i = 0; i < r.node_path.size(); ++i) {
@@ -173,9 +176,9 @@ static util::JsonValue serialize_route(const planner::RouteResult& r, const ds::
         l["to_id"] = leg.to_id;
         l["distance_km"] = leg.distance_km;
         l["travel_time_min"] = leg.travel_time_min;
-        l["scenic"] = leg.scenic;
-        l["crowd"] = leg.crowd;
-        l["traffic"] = leg.traffic;
+        l["scenic"] = graph.real_data ? util::JsonValue::null() : util::JsonValue(leg.scenic);
+        l["crowd"] = graph.real_data ? util::JsonValue::null() : util::JsonValue(leg.crowd);
+        l["traffic"] = graph.real_data ? util::JsonValue::null() : util::JsonValue(leg.traffic);
         legs_arr.push_back(l);
     }
     obj["legs"] = legs_arr;
@@ -186,7 +189,7 @@ static util::JsonValue serialize_route(const planner::RouteResult& r, const ds::
         util::JsonValue s = util::JsonValue::object();
         s["place_id"] = st.place_id;
         s["name"] = st.name;
-        s["visit_minutes"] = st.visit_minutes;
+        s["visit_minutes"] = graph.real_data ? util::JsonValue::null() : util::JsonValue(st.visit_minutes);
         s["is_must_visit"] = st.is_must_visit;
         s["is_start"] = st.is_start;
         s["is_end"] = st.is_end;
@@ -226,7 +229,9 @@ static util::JsonValue serialize_diff(const planner::RouteDiff& diff) {
 static util::JsonValue serialize_graph(const ds::Graph& graph, const planner::DynamicManager& dm) {
     util::JsonValue root = util::JsonValue::object();
     root["city"] = "Pune";
-    root["warning"] = "Real attraction names; all numeric attributes and road corridors are synthetic classroom examples, not verified navigation or live conditions.";
+    root["real_data"] = graph.real_data;
+    if (graph.real_data) { root["manifest"]=dataset_metadata["manifest"]; root["attractions"]=dataset_metadata["attractions"]; }
+    root["warning"] = graph.real_data ? "Offline OSM driving graph. Estimated free-flow time; traffic, crowd, scenic and visit durations unavailable. Approach snaps and access are not field-verified. Not turn-by-turn navigation." : "Real attraction names; all numeric attributes and road corridors are synthetic classroom examples, not verified navigation or live conditions.";
     root["graph_version"] = static_cast<int64_t>(graph.version());
 
     ds::DynArray<int> comp_ids;
@@ -239,8 +244,9 @@ static util::JsonValue serialize_graph(const ds::Graph& graph, const planner::Dy
         util::JsonValue pv = util::JsonValue::object();
         pv["id"] = p.id;
         pv["name"] = p.name;
-        pv["visit_minutes"] = p.visit_minutes;
-        pv["crowd"] = p.crowd;
+        pv["visit_minutes"] = graph.real_data ? util::JsonValue::null() : util::JsonValue(p.visit_minutes);
+        pv["crowd"] = graph.real_data ? util::JsonValue::null() : util::JsonValue(p.crowd);
+        pv["attraction"] = p.attraction;
         pv["x"] = p.x;
         pv["y"] = p.y;
         pv["index"] = p.index;
@@ -269,9 +275,11 @@ static util::JsonValue serialize_graph(const ds::Graph& graph, const planner::Dy
         rv["distance_km"] = r->distance_km;
         rv["base_time_min"] = r->base_time_min;
         rv["effective_time_min"] = r->effective_time_min();
-        rv["scenic"] = r->scenic;
-        rv["crowd"] = r->crowd;
-        rv["traffic"] = r->traffic;
+        rv["scenic"] = graph.real_data ? util::JsonValue::null() : util::JsonValue(r->scenic);
+        rv["crowd"] = graph.real_data ? util::JsonValue::null() : util::JsonValue(r->crowd);
+        rv["traffic"] = graph.real_data ? util::JsonValue::null() : util::JsonValue(r->traffic);
+        rv["osm_way"] = r->osm_way;
+        rv["name"] = r->name;
         rv["blocked"] = r->blocked;
         roads_arr.push_back(rv);
     }
@@ -281,38 +289,32 @@ static util::JsonValue serialize_graph(const ds::Graph& graph, const planner::Dy
 }
 
 int main(int argc, char** argv) {
-    std::string data_path = "tests/fixtures/pune_demo.json";
-    std::string web_dir = "web";
+    std::string data_path = "data/pune_driving.json";
+    std::string web_dir = "web_real";
     int port = 8080;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        if (arg == "--data" && i + 1 < argc) data_path = argv[++i];
+        if (arg == "--test-fixture") test_fixture = true;
+        else if (arg == "--data" && i + 1 < argc) data_path = argv[++i];
         else if (arg == "--web" && i + 1 < argc) web_dir = argv[++i];
         else if (arg == "--port" && i + 1 < argc) port = std::stoi(argv[++i]);
     }
 
     ds::Graph graph;
     ds::Trie trie;
-    if (!load_graph_from_json(data_path, graph, trie)) {
-        // Fallback search paths
-        if (load_graph_from_json("../tests/fixtures/pune_demo.json", graph, trie)) {
-            data_path = "../tests/fixtures/pune_demo.json";
-            web_dir = "../web";
-        } else if (load_graph_from_json("pune_route_planner/tests/fixtures/pune_demo.json", graph, trie)) {
-            data_path = "pune_route_planner/tests/fixtures/pune_demo.json";
-            web_dir = "pune_route_planner/web";
-        } else {
-            std::cerr << "Fatal error: Could not find pune_demo.json!" << std::endl;
-            return 1;
-        }
-    }
+    std::string load_error;
+    bool loaded = planner::load_dataset(data_path, graph, trie, dataset_metadata, test_fixture, load_error);
+    if (!loaded && test_fixture && load_error.empty()) loaded=load_graph_from_json(data_path,graph,trie);
+    if (!loaded) { std::cerr << "Dataset rejected: " << load_error << std::endl; return 1; }
 
     planner::DynamicManager dynamic_mgr(graph);
 
     httplib::Server svr;
     std::mutex state_mutex;
     svr.set_payload_max_length(64 * 1024);
+    // Bounded thread count avoids one 8 MiB stack per reported CPU on large hosts.
+    svr.new_task_queue = [] { return new httplib::ThreadPool(4); };
     svr.set_error_handler([](const httplib::Request&, httplib::Response& res) {
         if (res.get_header_value("Content-Type").find("application/json") == 0) return;
         auto error = util::JsonValue::object();
@@ -386,10 +388,19 @@ int main(int argc, char** argv) {
         query.start_id = start_id;
         query.end_id = end_id;
         query.primary_mode = planner::string_to_mode(body["mode"].as_string_or("balanced"));
+        if (graph.real_data) {
+            if (query.primary_mode != planner::Mode::Shortest && query.primary_mode != planner::Mode::Fastest) {
+                json_error(res, "Only shortest and estimated-fastest are available without verified condition metrics"); return;
+            }
+            if (body["mustVisit"].size() || body["interests"].size() || body["avoid"].size()) {
+                json_error(res, "Tours and interest scoring unavailable until verified visit durations/catalog metadata are supplied"); return;
+            }
+        }
         query.max_time_min = body["maxTimeMin"].as_double(-1.0);
         query.max_distance_km = body["maxDistanceKm"].as_double(-1.0);
-        query.k_alternatives = body["k"].as_int(5);
+        query.k_alternatives = body["k"].as_int(graph.real_data ? 1 : 5);
         query.max_detour_ratio = body["maxDetourRatio"].as_double(-1.0);
+        if(graph.real_data && query.k_alternatives!=1) { json_error(res,"Real-data release currently supports one exact unconstrained objective route; set k=1"); return; }
 
         // Parse weights if provided
         if (body.has_key("weights")) {
@@ -402,6 +413,7 @@ int main(int argc, char** argv) {
         }
 
         std::string weight_err;
+        if (graph.real_data) { query.weights.wd=.5;query.weights.wt=.5;query.weights.ws=0;query.weights.wc=0;query.weights.wp=0; }
         if (!query.weights.validate_and_normalize(weight_err)) {
             json_error(res, weight_err);
             return;
@@ -430,7 +442,7 @@ int main(int argc, char** argv) {
 
         util::JsonValue resp = util::JsonValue::object();
         resp["city"] = "Pune";
-        resp["warning"] = "Real attraction names; all numeric attributes and road corridors are synthetic classroom examples, not verified navigation or live conditions.";
+        resp["warning"] = graph.real_data ? "Offline OSM driving graph. Estimated free-flow time; traffic, crowd, scenic and visit durations unavailable. Approach snaps and access are not field-verified. Not turn-by-turn navigation." : "Real attraction names; all numeric attributes and road corridors are synthetic classroom examples, not verified navigation or live conditions.";
 
         if (!query.must_visit.empty()) {
             // Personalized Tour mode
@@ -478,6 +490,7 @@ int main(int argc, char** argv) {
                 planner::Mode::LeastCrowded
             };
             for (auto m : comparison_modes) {
+                if (graph.real_data && m != planner::Mode::Shortest && m != planner::Mode::Fastest) continue;
                 planner::Dijkstra::Options m_opts;
                 m_opts.mode = m;
                 m_opts.weights = query.weights;
@@ -493,6 +506,7 @@ int main(int argc, char** argv) {
 
     // 4. POST /api/update
     svr.Post("/api/update", [&](const httplib::Request& req, httplib::Response& res) {
+        if (graph.real_data) { json_error(res,"Manual/simulated condition mutations disabled for production data"); return; }
         std::lock_guard<std::mutex> lock(state_mutex);
         std::string err;
         util::JsonValue body = util::JsonValue::parse(req.body, &err);
@@ -578,6 +592,7 @@ int main(int argc, char** argv) {
 
     // 6. POST /api/simulate
     svr.Post("/api/simulate", [&](const httplib::Request&, httplib::Response& res) {
+        if (graph.real_data) { json_error(res,"Simulation disabled for production data"); return; }
         std::lock_guard<std::mutex> lock(state_mutex);
         std::string event_title;
         planner::RouteDiff diff;

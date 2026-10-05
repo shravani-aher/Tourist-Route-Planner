@@ -35,106 +35,53 @@ RouteResult Dijkstra::find_path(
         return result;
     }
 
-    const double kInfinity = std::numeric_limits<double>::infinity();
-    ds::DynArray<double> dist(num_nodes, kInfinity);
-    ds::DynArray<int> pred_node(num_nodes, -1);
-    ds::DynArray<std::string> pred_road(num_nodes, "");
-    ds::DynArray<bool> settled(num_nodes, false);
-
-    ds::MinHeap<double, int> pq(num_nodes);
-
-    dist[start_idx] = 0.0;
-    pq.push(start_idx, 0.0);
-
+    // State = directed arrival arc, not vertex. This preserves incoming-way
+    // context for turn restrictions. Use the hand-built hash map and min-heap.
+    struct State { int node; std::string incoming; int predecessor; double distance; bool settled; };
+    ds::DynArray<State> states;
+    ds::HashMap<std::string, int> ids;
+    ds::MinHeap<double, int> pq;
+    auto key = [](int node, const std::string& road) { return std::to_string(node) + ":" + road; };
+    states.push_back(State{start_idx, "", -1, 0.0, false});
+    ids.insert(key(start_idx, ""), 0); pq.push(0, 0.0);
+    int target = -1;
     while (!pq.empty()) {
-        auto top = pq.pop();
-        int u = top.id;
-        double u_dist = top.priority;
-
-        if (settled[u]) continue;
-        settled[u] = true;
+        int sid = pq.pop().id;
+        if (states[sid].settled) continue;
+        states[sid].settled = true;
+        // Copy before growing states, which can invalidate references.
+        State current = states[sid]; int u = current.node;
         result.settled_order.push_back(u);
-
-        if (u == end_idx) {
-            // Target settled
-            break;
-        }
-
-        const auto& arcs = graph.get_outgoing_arcs(u);
-        for (const auto& arc : arcs) {
-            int v = arc.to;
-            if (settled[v]) continue;
-
-            const ds::Road* road = graph.get_road(arc.roadId);
-            if (!road || road->blocked) {
-                continue;
-            }
-
+        if (u == end_idx) { target = sid; break; }
+        const ds::Road* previous = current.incoming.empty() ? nullptr : graph.get_road(current.incoming);
+        for (const auto& arc : graph.get_outgoing_arcs(u)) {
+            const auto* road = graph.get_road(arc.roadId);
+            if (!road || road->blocked) continue;
+            if (previous && !graph.turn_allowed(u, previous->osm_way, road->osm_way)) continue;
             double penalty = 0.0;
-            if (options.edge_penalties) {
-                const double* pen = options.edge_penalties->find(road->id);
-                if (pen) penalty = *pen;
-            }
-
-            const auto& v_place = graph.get_place(v);
-            double edge_cost = Scoring::compute_edge_cost(
-                *road, v_place, options.mode, options.weights, options.interests, penalty
-            );
-
-            if (edge_cost < 0.0 || std::isnan(edge_cost) || std::isinf(edge_cost)) {
-                continue; // reject invalid cost
-            }
-
-            double cand_dist = u_dist + edge_cost;
-
-            bool improve = false;
-            if (cand_dist < dist[v] - 1e-9) {
-                improve = true;
-            } else if (std::abs(cand_dist - dist[v]) <= 1e-9) {
-                // Deterministic tie-break by node ID, then road ID
-                std::string u_id = graph.get_place(u).id;
-                std::string curr_pred_u_id = (pred_node[v] >= 0) ? graph.get_place(pred_node[v]).id : "";
-                if (pred_node[v] < 0 || u_id < curr_pred_u_id) {
-                    improve = true;
-                } else if (u_id == curr_pred_u_id && arc.roadId < pred_road[v]) {
-                    improve = true;
-                }
-            }
-
-            if (improve) {
-                dist[v] = cand_dist;
-                pred_node[v] = u;
-                pred_road[v] = arc.roadId;
-                pq.push(v, cand_dist);
+            if (options.edge_penalties) { const auto* p = options.edge_penalties->find(road->id); if (p) penalty = *p; }
+            double cost = Scoring::compute_edge_cost(*road, graph.get_place(arc.to), options.mode,
+                options.weights, options.interests, penalty);
+            if (!std::isfinite(cost) || cost < 0) continue;
+            std::string k = key(arc.to, arc.roadId);
+            const int* existing = ids.find(k); int next;
+            if (existing) next = *existing;
+            else { next = static_cast<int>(states.size()); ids.insert(k,next);
+                states.push_back(State{arc.to, arc.roadId, -1, std::numeric_limits<double>::infinity(), false}); }
+            double candidate = current.distance + cost;
+            if (!states[next].settled && candidate < states[next].distance - 1e-12) {
+                states[next].distance = candidate; states[next].predecessor = sid; pq.push(next,candidate);
             }
         }
     }
-
-    if (!settled[end_idx] || dist[end_idx] == kInfinity) {
-        result.found = false;
-        result.message = "Destination unreachable from start node due to road closures or disconnected graph components.";
-        return result;
+    if (target < 0) { result.message = "Destination unreachable within eligible bounded street network."; return result; }
+    ds::DynArray<int> rev_nodes; ds::DynArray<std::string> rev_roads;
+    for (int cur=target; cur>=0; cur=states[cur].predecessor) {
+        rev_nodes.push_back(states[cur].node);
+        if (!states[cur].incoming.empty()) rev_roads.push_back(states[cur].incoming);
     }
-
-    // Reconstruct path backwards from end_idx to start_idx
-    ds::DynArray<int> rev_nodes;
-    ds::DynArray<std::string> rev_roads;
-    int curr = end_idx;
-
-    while (curr != start_idx && curr >= 0) {
-        rev_nodes.push_back(curr);
-        rev_roads.push_back(pred_road[curr]);
-        curr = pred_node[curr];
-    }
-    rev_nodes.push_back(start_idx);
-
-    // Reverse to get start -> end order
-    for (size_t i = 0; i < rev_nodes.size(); ++i) {
-        result.node_path.push_back(rev_nodes[rev_nodes.size() - 1 - i]);
-    }
-    for (size_t i = 0; i < rev_roads.size(); ++i) {
-        result.road_path.push_back(rev_roads[rev_roads.size() - 1 - i]);
-    }
+    for (size_t i=0; i<rev_nodes.size(); ++i) result.node_path.push_back(rev_nodes[rev_nodes.size()-1-i]);
+    for (size_t i=0; i<rev_roads.size(); ++i) result.road_path.push_back(rev_roads[rev_roads.size()-1-i]);
 
     // Compute ground-truth metrics (re-evaluate on unpenalized original costs)
     double total_scenic_weighted = 0.0;

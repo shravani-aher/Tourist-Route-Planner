@@ -1,3 +1,7 @@
+# Historical M0-M1 verification (superseded runtime)
+
+The checks below describe the synthetic test fixture only. M2 production uses the real OSM graph and web_real UI documented in README.md. Do not use these historical numbers as driving data.
+
 # M0-M1 fix verification
 
 Baseline: 9af5a9e9c73b13627d08aea4d70e5d3413923242.

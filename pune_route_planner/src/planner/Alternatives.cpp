@@ -46,6 +46,16 @@ ds::DynArray<RouteResult> Alternatives::generate_ranked_alternatives(
     const RouteQuery& query
 ) {
     ds::DynArray<RouteResult> candidates;
+    if (graph.real_data && query.k_alternatives == 1) {
+        Dijkstra::Options o;o.mode=query.primary_mode;o.weights=query.weights;o.interests=query.interests;
+        auto r=Dijkstra::find_path(graph,start_idx,end_idx,o);
+        if(query.max_detour_ratio>0 && r.found) {
+            auto shortest=o;shortest.mode=Mode::Shortest;auto reference=Dijkstra::find_path(graph,start_idx,end_idx,shortest);
+            if(!reference.found || r.total_distance_km > reference.total_distance_km*query.max_detour_ratio+1e-6) return candidates;
+        }
+        if (r.found && (query.max_time_min<=0 || r.total_time_min<=query.max_time_min) && (query.max_distance_km<=0 || r.total_distance_km<=query.max_distance_km)) candidates.push_back(r);
+        return candidates;
+    }
     ds::HashMap<std::string, bool> seen_sequences;
 
     // 1. Generate base routes for all 5 modes
@@ -64,6 +74,7 @@ ds::DynArray<RouteResult> Alternatives::generate_ranked_alternatives(
     double shortest_dist = -1.0;
 
     for (Mode m : all_modes) {
+        if (graph.real_data && m != Mode::Shortest && m != Mode::Fastest) continue;
         base_opts.mode = m;
         RouteResult res = Dijkstra::find_path(graph, start_idx, end_idx, base_opts);
         if (res.found) {

@@ -11,3 +11,6 @@ build/
 
 node_modules/
 planner-*-fixed.png
+
+build-*/
+__pycache__/

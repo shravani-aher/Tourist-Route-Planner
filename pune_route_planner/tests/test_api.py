@@ -3,7 +3,7 @@ import json, socket, subprocess, sys, time, urllib.request, urllib.error
 binary, data, web = sys.argv[1:]
 with socket.socket() as sock:
     sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
-p = subprocess.Popen([binary, '--data', data, '--web', web, '--port', str(port)], stdout=subprocess.DEVNULL)
+p = subprocess.Popen([binary, "--test-fixture", '--data', data, '--web', web, '--port', str(port)], stdout=subprocess.DEVNULL)
 base = f'http://127.0.0.1:{port}'
 checks = 0
 def request(path, body=None, raw=None, expected=200):

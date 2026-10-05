@@ -1,0 +1,15 @@
+'use strict';
+let graph,nodes=new Map(),roads=new Map(),route=null;
+const $=id=>document.getElementById(id),canvas=$('map');
+function draw(){if(!graph)return;const box=canvas.getBoundingClientRect(),ratio=devicePixelRatio;canvas.width=box.width*ratio;canvas.height=box.height*ratio;const c=canvas.getContext('2d');c.scale(ratio,ratio);
+ const b=graph.manifest.bbox,cos=Math.cos((b[0]+b[2])/2*Math.PI/180),dx=(b[3]-b[1])*cos,dy=b[2]-b[0],scale=Math.min((box.width-30)/dx,(box.height-30)/dy),ox=(box.width-dx*scale)/2,oy=(box.height-dy*scale)/2;
+ const point=n=>[ox+(n.x-b[1])*cos*scale,box.height-oy-(n.y-b[0])*scale];
+ function line(r){const a=nodes.get(r.u),b=nodes.get(r.v);if(!a||!b)return;const p=point(a),q=point(b);c.moveTo(...p);c.lineTo(...q);}
+ c.beginPath();graph.roads.forEach(line);c.strokeStyle='#bac8bd';c.lineWidth=.6;c.stroke();
+ if(route){c.beginPath();route.roads.forEach(id=>line(roads.get(id)));c.strokeStyle='#227251';c.lineWidth=3;c.stroke();}
+ graph.attractions.forEach(a=>{const n=nodes.get(a.node_id),p=point(n);c.beginPath();c.arc(...p,4,0,Math.PI*2);c.fillStyle='#23483b';c.fill();c.font='bold 11px system-ui';c.fillText(a.id,p[0]+6,p[1]-5);});
+}
+async function plan(){ $('plan').disabled=true;$('status').textContent='Finding route...';try{const r=await fetch('/api/route',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({start:$('start').value,end:$('end').value,mode:$('mode').value,k:1})}),data=await r.json();if(!r.ok)throw Error(data.error);route=data.best_route;$('status').textContent='Route found';$('summary').textContent=`${route.total_distance_km.toFixed(2)} km · ${route.total_travel_time_min.toFixed(1)} min estimated free-flow driving time`;
+ const aa=graph.attractions.filter(a=>a.id===$('start').value||a.id===$('end').value);$('snap').textContent=aa.map(a=>`${a.name}: ${a.snap_distance_m} m map-derived approach gap, not included in driving totals.`).join(' ');draw();}catch(e){route=null;$('status').textContent=e.message;$('summary').textContent='';draw();}finally{$('plan').disabled=false;}}
+(async()=>{try{const r=await fetch('/api/graph');if(!r.ok)throw Error('Graph unavailable');graph=await r.json();if(!graph.real_data)throw Error('Real-data UI requires a validated OSM dataset');graph.places.forEach(n=>nodes.set(n.id,n));graph.roads.forEach(r=>roads.set(r.id,r));for(const id of ['start','end'])graph.attractions.forEach(a=>{const o=document.createElement('option');o.value=a.id;o.textContent=a.name;$(id).append(o);});$('end').value='SB';$('credit').textContent=graph.manifest.attribution+' · ODbL';const a=document.createElement('a');a.href=graph.manifest.license_url;a.textContent=' Attribution and license';$('credit').append(a);$('provenance').textContent=`OSM snapshot: ${graph.manifest.snapshot}. Profile: ${graph.manifest.profile}. ${graph.places.length.toLocaleString()} street vertices, ${graph.roads.length.toLocaleString()} road segments. Source: ${graph.manifest.source_url}. ${graph.manifest.time_model}`;draw();await plan();}catch(e){$('status').textContent=e.message;}})();
+$('plan').addEventListener('click',plan);window.addEventListener('resize',draw);
