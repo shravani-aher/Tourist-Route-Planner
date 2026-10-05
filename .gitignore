@@ -8,3 +8,6 @@ build/
 *.ilk
 .vscode/
 .idea/
+
+node_modules/
+planner-*-fixed.png

@@ -443,12 +443,57 @@ void test_tour_planner(const ds::Graph& g) {
     std::cout << "  -> PASSED" << std::endl;
 }
 
+static void test_regressions(ds::Graph& g) {
+    planner::RouteQuery q; q.start_id = "SW"; q.end_id = "SB";
+    const planner::Mode modes[] = {planner::Mode::Balanced, planner::Mode::Shortest,
+        planner::Mode::Fastest, planner::Mode::Scenic, planner::Mode::LeastCrowded};
+    // Exhaustive endpoint/mode comparison against the unpenalized objective solver.
+    for (int u = 0; u < 10; ++u) for (int v = 0; v < 10; ++v) for (auto mode : modes) {
+        q.primary_mode = mode;
+        auto ranked = planner::Alternatives::generate_ranked_alternatives(g, u, v, q);
+        planner::Dijkstra::Options opts; opts.mode = mode;
+        auto expected = planner::Dijkstra::find_path(g, u, v, opts);
+        assert(!ranked.empty() && expected.found);
+        auto cost = [&](const planner::RouteResult& r) {
+            double c = 0;
+            for (const auto& leg : r.legs) c += planner::Scoring::compute_edge_cost(
+                *g.get_road(leg.road_id), g.get_place(leg.to_idx), mode, q.weights, q.interests);
+            return c;
+        };
+        assert(approx_equal(cost(ranked[0]), cost(expected)));
+    }
+    q.primary_mode = planner::Mode::Fastest;
+    auto ranked = planner::Alternatives::generate_ranked_alternatives(g, g.get_place_index("SW"), g.get_place_index("SB"), q);
+    assert(approx_equal(ranked[0].total_travel_time_min, 22.8));
+    q.end_id = "RZ"; q.must_visit.push_back("DG"); q.primary_mode = planner::Mode::Scenic; q.max_time_min = 100;
+    std::string err; auto tour = planner::Tour::plan_tour(g, q, err);
+    assert(!tour.found || tour.total_time_min <= 100 + 1e-6);
+    q.max_time_min = -1; q.max_distance_km = 1;
+    assert(!planner::Tour::plan_tour(g, q, err).found);
+    q.max_distance_km = -1; q.end_id = "SW"; q.max_time_min = 200;
+    tour = planner::Tour::plan_tour(g, q, err);
+    assert(tour.found && tour.stops[0].visit_minutes == 0 && tour.stops.back().visit_minutes == 0);
+    double visits = 0; for (const auto& stop : tour.stops) visits += stop.visit_minutes;
+    assert(approx_equal(visits, tour.total_visit_time_min));
+    auto zero = planner::Dijkstra::find_path(g, 0, 0, planner::Dijkstra::Options{});
+    assert(zero.stops[0].visit_minutes == 0 && zero.total_time_min == 0);
+    for (const std::string invalid : {"{} trailing", "01", "1.", "1e+", "1e999", "[1,]", "{\"a\":1,\"a\":2}"}) {
+        util::JsonValue::parse(invalid, &err); assert(!err.empty());
+    }
+    auto unicode = util::JsonValue::parse("\"\\u092a\\u0941\\u0923\\u0947\"", &err);
+    assert(err.empty() && unicode.as_string() == "पुणे");
+    auto escaped = util::JsonValue::object(); escaped["error"] = "bad \"id\"\n\\";
+    auto decoded = util::JsonValue::parse(escaped.serialize(), &err);
+    assert(err.empty() && decoded["error"].as_string() == escaped["error"].as_string());
+    std::cout << "  Regression checks passed (500 mode/endpoint comparisons)" << std::endl;
+}
+
 int main(int argc, char** argv) {
     std::cout << "===========================================" << std::endl;
     std::cout << "   RUNNING DATA STRUCTURES TEST SUITE      " << std::endl;
     std::cout << "===========================================" << std::endl;
 
-    std::string data_path = "data/pune_demo.json";
+    std::string data_path = "tests/fixtures/pune_demo.json";
     if (argc > 1) {
         data_path = argv[1];
     }
@@ -464,11 +509,11 @@ int main(int argc, char** argv) {
     bool loaded = load_demo_graph(data_path, g);
     if (!loaded) {
         // Try fallback path
-        data_path = "../data/pune_demo.json";
+        data_path = "../tests/fixtures/pune_demo.json";
         loaded = load_demo_graph(data_path, g);
     }
     if (!loaded) {
-        data_path = "pune_route_planner/data/pune_demo.json";
+        data_path = "pune_route_planner/tests/fixtures/pune_demo.json";
         loaded = load_demo_graph(data_path, g);
     }
     assert(loaded && "Failed to load pune_demo.json dataset");
@@ -478,6 +523,7 @@ int main(int argc, char** argv) {
     test_dijkstra_demo_benchmarks(g);
     test_dynamic_updates_undo_and_bfs(g);
     test_tour_planner(g);
+    test_regressions(g);
 
     std::cout << "===========================================" << std::endl;
     std::cout << "   ALL TESTS PASSED WITH 100% SUCCESS!     " << std::endl;

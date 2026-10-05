@@ -50,5 +50,25 @@ add_executable(test_all
     ${COMMON_SOURCES}
 )
 
+# Tests must remain active in Release builds (assert is the legacy harness).
+if(MSVC)
+    target_compile_options(test_all PRIVATE /UNDEBUG)
+else()
+    target_compile_options(test_all PRIVATE -UNDEBUG)
+endif()
+option(ENABLE_SANITIZERS "Enable address and undefined behavior sanitizers" OFF)
+if(ENABLE_SANITIZERS AND NOT MSVC)
+    foreach(target pune_route_planner test_all)
+        target_compile_options(${target} PRIVATE -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer)
+        target_link_options(${target} PRIVATE -fsanitize=address,undefined)
+    endforeach()
+endif()
 enable_testing()
-add_test(NAME PuneRoutePlannerTests COMMAND test_all "${CMAKE_CURRENT_SOURCE_DIR}/data/pune_demo.json")
+add_test(NAME PuneRoutePlannerTests COMMAND test_all "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/pune_demo.json")
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+add_test(NAME HttpRegressions COMMAND ${Python3_EXECUTABLE}
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_api.py"
+    "$<TARGET_FILE:pune_route_planner>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/pune_demo.json"
+    "${CMAKE_CURRENT_SOURCE_DIR}/web")
+set_tests_properties(HttpRegressions PROPERTIES TIMEOUT 60)

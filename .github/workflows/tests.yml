@@ -1,0 +1,33 @@
+name: Planner regression gates
+on: [push, pull_request]
+jobs:
+  cpp-http:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - { build: Debug, sanitizers: 'OFF' }
+          - { build: Release, sanitizers: 'OFF' }
+          - { build: Debug, sanitizers: 'ON' }
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ matrix.build }} -DENABLE_SANITIZERS=${{ matrix.sanitizers }}
+      - run: cmake --build build --parallel 2
+      - run: ctest --test-dir build --output-on-failure --no-tests=error
+        env:
+          ASAN_OPTIONS: detect_leaks=1
+          UBSAN_OPTIONS: halt_on_error=1
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: cmake -S . -B build && cmake --build build --parallel 2
+      - run: npm ci && npx playwright install --with-deps chromium
+        working-directory: pune_route_planner/tests
+      - run: |
+          build/pune_route_planner/pune_route_planner --data pune_route_planner/tests/fixtures/pune_demo.json --web pune_route_planner/web --port 8087 > server.log 2>&1 &
+          server=$!
+          trap 'kill "$server"' EXIT
+          npm test --prefix pune_route_planner/tests
