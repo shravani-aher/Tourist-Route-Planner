@@ -199,7 +199,12 @@ async function applyRoadUpdate(type, roadId, val) {
 
     if (data.current_route) {
       state.currentRoute = data.current_route;
+      state.rankedRoutes = []; state.modeRoutes = null;
+      renderRankedRoutes([]); renderComparisonTable();
       renderRouteSummary(state.currentRoute);
+      document.getElementById("explanationContent").textContent = state.currentRoute.found
+        ? "Route recalculated with the selected objective and limits. Synthetic test network."
+        : state.currentRoute.message;
     }
     showDiffBanner("Graph Mutation Applied", data.diff.summary);
     updateQuickControls(roadId);
@@ -225,7 +230,12 @@ async function triggerUndo() {
 
     if (data.current_route) {
       state.currentRoute = data.current_route;
+      state.rankedRoutes = []; state.modeRoutes = null;
+      renderRankedRoutes([]); renderComparisonTable();
       renderRouteSummary(state.currentRoute);
+      document.getElementById("explanationContent").textContent = state.currentRoute.found
+        ? "Route recalculated with the selected objective and limits. Synthetic test network."
+        : state.currentRoute.message;
     }
     showDiffBanner("Undo Executed (Stack Pop)", data.diff.summary);
     await fetchStats();
@@ -250,7 +260,12 @@ async function triggerSimulationEvent() {
 
     if (data.current_route) {
       state.currentRoute = data.current_route;
+      state.rankedRoutes = []; state.modeRoutes = null;
+      renderRankedRoutes([]); renderComparisonTable();
       renderRouteSummary(state.currentRoute);
+      document.getElementById("explanationContent").textContent = state.currentRoute.found
+        ? "Route recalculated with the selected objective and limits. Synthetic test network."
+        : state.currentRoute.message;
     }
     showDiffBanner("Simulated Event: " + data.event_title, data.diff.summary);
     await fetchStats();
@@ -669,7 +684,9 @@ function drawGraph() {
     // Place Name Label
     ctx.font = "600 11px sans-serif";
     ctx.fillStyle = "#f8fafc";
-    ctx.fillText(place.name, pos.x, pos.y + 19);
+    const labelHalfWidth = ctx.measureText(place.name).width / 2;
+    const labelX = Math.max(labelHalfWidth + 4, Math.min(pos.x, canvasContainer.clientWidth - labelHalfWidth - 4));
+    ctx.fillText(place.name, labelX, pos.y + 19);
 
     ctx.restore();
   });
@@ -918,7 +935,7 @@ function renderRouteSummary(route) {
 
 function renderRankedRoutes(routes) {
   const container = document.getElementById("routesList");
-  document.getElementById("altCountBadge").textContent = `${routes.length} options`;
+  document.getElementById("altCountBadge").textContent = routes.length ? `${routes.length} options` : "Recalculate to refresh";
   container.innerHTML = "";
 
   routes.forEach((r, idx) => {
@@ -956,7 +973,7 @@ function renderRankedRoutes(routes) {
 function renderComparisonTable() {
   const tbody = document.querySelector("#comparisonTable tbody");
   if (!state.modeRoutes) {
-    tbody.innerHTML = `<tr><td colspan="6" class="placeholder-text text-center">Standard modes comparison unavailable for multi-stop tour</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" class="placeholder-text text-center">Recalculate to refresh mode comparison</td></tr>`;
     return;
   }
 
@@ -993,19 +1010,15 @@ function renderWhyExplanation(route, query) {
     return;
   }
 
-  const interestsList = query.interests.length > 0 ? query.interests.join(", ") : "general exploration";
-  let explanation = `This corridor was selected by optimizing the 5-criterion balanced objective with weights: `;
-  explanation += `Distance ${(query.weights.wd * 100).toFixed(0)}%, Time ${(query.weights.wt * 100).toFixed(0)}%, `;
-  explanation += `Scenic ${(query.weights.ws * 100).toFixed(0)}%, Crowd ${(query.weights.wc * 100).toFixed(0)}%, and Interest Match ${(query.weights.wp * 100).toFixed(0)}%.<br><br>`;
-
-  if (state.modeRoutes && state.modeRoutes.shortest) {
-    const shortest = state.modeRoutes.shortest;
-    const timeDiff = shortest.total_travel_time_min - route.total_travel_time_min;
-    if (timeDiff > 1.0) {
-      explanation += `&#9889; Saves <strong>${timeDiff.toFixed(1)} min</strong> over the shortest-distance route by bypassing congested street bottlenecks.<br>`;
-    }
-  }
-
-  explanation += `&#127963; Prioritizes corridors matching your interest in <strong>${interestsList}</strong> while avoiding highly congested temple and commercial stretches during peak hours.`;
-  container.innerHTML = explanation;
+  const labels = {
+    balanced: "Balances distance, travel time, scenery, crowd and interests.",
+    fastest: "Minimizes modeled travel time.",
+    shortest: "Minimizes route distance.",
+    scenic: "Minimizes distance-weighted scenery penalty.",
+    least_crowded: "Minimizes travel-time-weighted crowd penalty."
+  };
+  container.textContent = (route.mode_label === "personalized_tour"
+    ? "Greedy stop ordering with bounded 2-opt. Limits include travel and intermediate visits."
+    : labels[query.mode] || "Alternative corridor from the bounded candidate pool.") +
+    " Synthetic test network, not verified driving directions.";
 }

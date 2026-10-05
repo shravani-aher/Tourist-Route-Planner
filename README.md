@@ -117,7 +117,7 @@ g++ -std=c++17 -Wall -Wextra -O2 src/main.cpp src/planner/Models.cpp src/planner
 To run the complete data structures test suite with one line:
 ```bash
 g++ -std=c++17 -Wall -Wextra -O2 tests/test_all.cpp src/planner/Models.cpp src/planner/Scoring.cpp src/planner/Dijkstra.cpp src/planner/Alternatives.cpp src/planner/Tour.cpp src/planner/Dynamic.cpp src/util/Json.cpp -o test_all.exe
-./test_all.exe data/pune_demo.json
+./test_all.exe tests/fixtures/pune_demo.json
 ```
 
 ### Option B: CMake Build & CTest
@@ -168,7 +168,7 @@ Open your browser to: **`http://127.0.0.1:8080`**
 
 ## 6. Verified Test Suite Output
 
-Running `./test_all.exe data/pune_demo.json` produces:
+Running `./test_all.exe tests/fixtures/pune_demo.json` produces:
 ```text
 ===========================================
    RUNNING DATA STRUCTURES TEST SUITE      
@@ -218,3 +218,44 @@ Running `./test_all.exe data/pune_demo.json` produces:
 1. **OSM / GTFS Integration**: Import OpenStreetMap PBF extracts and Pune Mahanagar Parivahan Mahamandal Ltd (PMPML) bus routes for multi-modal transit graph planning.
 2. **Time-Dependent Dijkstra (TDD)**: Model hourly diurnal traffic curves $t(e, \tau)$ to account for morning/evening peak office rushes on Karve Road and FC Road.
 3. **Contraction Hierarchies / A\***: Implement preprocessing techniques like Contraction Hierarchies (CH) and bidirectional A* with Landmark heuristics (ALT) for sub-millisecond route queries on million-node networks.
+
+## Correctness baseline (M0-M1, October 2026)
+
+This is still a **synthetic test-network app**, not a production driving planner.
+The fixture now lives in `pune_route_planner/tests/fixtures/pune_demo.json`.
+Real street ingestion, entrances, one-way/access/turn restrictions, genuine condition feeds
+and release packaging without fixtures remain M2 and later work.
+
+From the repository root (CMake 3.14+, C++17, Python 3):
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build --parallel 2
+ctest --test-dir build --output-on-failure --no-tests=error
+./build/pune_route_planner/pune_route_planner --data pune_route_planner/tests/fixtures/pune_demo.json --web pune_route_planner/web
+```
+
+Windows executable paths depend on the chosen CMake generator/configuration.
+Use `-DENABLE_SANITIZERS=ON` with GCC/Clang for address/undefined-behavior checks.
+Assertions remain active in the Release test target. CI covers Linux Debug, Release,
+sanitisers, actual HTTP regressions and headless browser checks.
+
+Browser tests: `npm ci --prefix pune_route_planner/tests`, then
+`npx --prefix pune_route_planner/tests playwright install chromium`. Start the server
+on port 8087 and run `npm test --prefix pune_route_planner/tests`.
+Set `CHROME_PATH` for an installed Chrome executable or `PLANNER_URL` for another port.
+
+Route candidates are ranked by the **selected objective**, not always balanced cost.
+Limits apply to the final selected-mode itinerary, including intermediate visit time
+for tours. Start and destination are transit endpoints (zero visit time), including
+round trips. `maxTimeMin` and `maxDistanceKm` accept positive values or `-1` for
+unlimited; `k` is an integer from 1 to 20. The formerly hidden 1.75x distance cap
+is now opt-in using `maxDetourRatio` (at least 1, or -1 for unlimited).
+Constrained routing and tour selection are bounded heuristics: failure means no
+feasible route was found in the candidate pool, not proof that none exists.
+
+Updates and undo call the same solver as initial requests. Infeasible recalculations
+are returned to the browser instead of leaving an old route visible. Shared local
+state is serialized across requests, but multiple-client session isolation is not
+implemented. JSON inputs have explicit types, enum/range checks, depth and body
+limits; errors are serialized rather than concatenated.

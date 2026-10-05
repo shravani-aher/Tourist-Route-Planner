@@ -62,7 +62,7 @@
   </section>
 
   <!-- Dynamic Change Notification Banner -->
-  <div class="diff-banner hidden" id="diffBanner">
+  <div class="diff-banner hidden" id="diffBanner" aria-live="polite">
     <div class="diff-header">
       <strong id="diffTitle">Graph Updated</strong>
       <button class="close-btn" id="btnCloseDiff">&times;</button>
@@ -271,7 +271,7 @@
           <span class="badge badge-primary" id="routeModeBadge">Balanced</span>
         </h2>
         
-        <div id="routeSummaryCard" class="summary-card">
+        <div id="routeSummaryCard" aria-live="polite" class="summary-card">
           <p class="placeholder-text">Select origin, destination and click "Calculate Best Route" to view personalized options.</p>
         </div>
       </div>
