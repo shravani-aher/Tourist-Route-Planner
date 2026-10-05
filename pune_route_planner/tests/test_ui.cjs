@@ -4,7 +4,10 @@ const {chromium} = require('playwright');
  const errors=[];
  const page=await b.newPage({viewport:{width:1440,height:1000}});
  page.on('pageerror',e=>errors.push(e.message));
- await page.goto(process.env.PLANNER_URL || 'http://127.0.0.1:8087');
+ for (let attempt=0; attempt<40; ++attempt) {
+   try { await page.goto(process.env.PLANNER_URL || 'http://127.0.0.1:8087'); break; }
+   catch (error) { if (attempt===39) throw error; await new Promise(r=>setTimeout(r,100)); }
+ }
  await page.waitForFunction(()=>document.querySelector('#startSelect').options.length===10);
  await page.selectOption('#startSelect','SW'); await page.selectOption('#endSelect','SB');
  await page.locator('[data-mode="fastest"]').click();

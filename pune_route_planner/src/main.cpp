@@ -313,6 +313,12 @@ int main(int argc, char** argv) {
     httplib::Server svr;
     std::mutex state_mutex;
     svr.set_payload_max_length(64 * 1024);
+    svr.set_error_handler([](const httplib::Request&, httplib::Response& res) {
+        if (res.get_header_value("Content-Type").find("application/json") == 0) return;
+        auto error = util::JsonValue::object();
+        error["error"] = res.status == 413 ? "Request body exceeds 64 KiB" : "HTTP request rejected";
+        res.set_content(error.serialize(), "application/json");
+    });
 
     // CORS headers for all responses
     svr.set_default_headers({

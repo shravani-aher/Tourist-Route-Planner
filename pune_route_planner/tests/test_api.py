@@ -25,6 +25,8 @@ try:
         try: request('/api/graph'); break
         except (ConnectionError, urllib.error.URLError): time.sleep(.05)
     else: raise RuntimeError('Server did not start')
+    request('/api/route', raw=' ' * 65537, expected=413)
+    request('/api/missing', expected=404)
     result = request('/api/route', q)
     assert abs(result['best_route']['total_travel_time_min'] - 22.8) < 1e-6
     for mode in ['balanced','shortest','fastest','scenic','least_crowded']:
