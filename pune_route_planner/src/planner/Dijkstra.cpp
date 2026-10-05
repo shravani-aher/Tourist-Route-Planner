@@ -29,7 +29,7 @@ RouteResult Dijkstra::find_path(
         result.node_path.push_back(start_idx);
         result.settled_order.push_back(start_idx);
         const auto& p = graph.get_place(start_idx);
-        result.stops.push_back(PlannedStop{p.id, p.name, p.visit_minutes, false, true, true});
+        result.stops.push_back(PlannedStop{p.id, p.name, 0, false, true, true});
         result.demo_index = 100.0;
         result.message = "Start and destination are identical; 0 km route.";
         return result;

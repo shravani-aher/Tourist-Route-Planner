@@ -7,6 +7,25 @@
 
 namespace planner {
 
+// Evaluate every directed leg, including reversed interior arcs after 2-opt.
+static bool measure_tour(const ds::Graph& graph, const ds::DynArray<int>& tour,
+                         const RouteQuery& query, double& time, double& distance) {
+    time = distance = 0.0;
+    Dijkstra::Options opts;
+    opts.mode = query.primary_mode; opts.weights = query.weights; opts.interests = query.interests;
+    for (size_t i = 0; i + 1 < tour.size(); ++i) {
+        auto leg = Dijkstra::find_path(graph, tour[i], tour[i + 1], opts);
+        if (!leg.found) return false;
+        time += leg.total_travel_time_min; distance += leg.total_distance_km;
+    }
+    for (size_t i = 1; i + 1 < tour.size(); ++i) time += graph.get_place(tour[i]).visit_minutes;
+    return true;
+}
+static bool within_limits(double time, double distance, const RouteQuery& query) {
+    return (query.max_time_min <= 0 || time <= query.max_time_min + 1e-6) &&
+           (query.max_distance_km <= 0 || distance <= query.max_distance_km + 1e-6);
+}
+
 double Tour::calculate_leg_travel_time(
     const ds::Graph& graph,
     int u,
@@ -15,7 +34,7 @@ double Tour::calculate_leg_travel_time(
 ) {
     if (u == v) return 0.0;
     Dijkstra::Options opts;
-    opts.mode = Mode::Fastest;
+    opts.mode = query.primary_mode;
     opts.weights = query.weights;
     opts.interests = query.interests;
     RouteResult r = Dijkstra::find_path(graph, u, v, opts);
@@ -93,23 +112,14 @@ void Tour::apply_2opt(
 
         for (size_t i = 1; i + 1 < tour.size() - 1; ++i) {
             for (size_t j = i + 1; j < tour.size() - 1; ++j) {
-                double current_dist =
-                    calculate_leg_travel_time(graph, tour[i - 1], tour[i], query) +
-                    calculate_leg_travel_time(graph, tour[j], tour[j + 1], query);
-
-                double new_dist =
-                    calculate_leg_travel_time(graph, tour[i - 1], tour[j], query) +
-                    calculate_leg_travel_time(graph, tour[i], tour[j + 1], query);
-
-                if (new_dist < current_dist - 1e-4) {
-                    // Reverse subsegment from i to j
-                    size_t left = i;
-                    size_t right = j;
-                    while (left < right) {
-                        std::swap(tour[left], tour[right]);
-                        ++left;
-                        --right;
-                    }
+                double old_time, old_distance, new_time, new_distance;
+                auto candidate = tour;
+                std::reverse(candidate.begin() + i, candidate.begin() + j + 1);
+                if (measure_tour(graph, tour, query, old_time, old_distance) &&
+                    measure_tour(graph, candidate, query, new_time, new_distance) &&
+                    new_time < old_time - 1e-4 &&
+                    (query.max_distance_km <= 0 || new_distance <= query.max_distance_km + 1e-6)) {
+                    tour = std::move(candidate);
                     improved = true;
                 }
             }
@@ -123,6 +133,7 @@ RouteResult Tour::plan_tour(
     std::string& error_msg
 ) {
     RouteResult final_route;
+    error_msg.clear();
     final_route.mode_label = "personalized_tour";
 
     int start_idx = graph.get_place_index(query.start_id);
@@ -180,35 +191,16 @@ RouteResult Tour::plan_tour(
     );
     apply_2opt(graph, current_tour, query);
 
-    // 4. Calculate mandatory tour time (travel + visit time of must-visits)
-    double mandatory_travel_time = 0.0;
-    for (size_t i = 0; i + 1 < current_tour.size(); ++i) {
-        double leg_t = calculate_leg_travel_time(graph, current_tour[i], current_tour[i + 1], query);
-        if (leg_t >= 1e8) {
-            error_msg = "Cannot reach next stop in tour: " + graph.get_place(current_tour[i + 1]).name;
-            final_route.message = error_msg;
-            return final_route;
-        }
-        mandatory_travel_time += leg_t;
+    double current_total_time, current_distance;
+    if (!measure_tour(graph, current_tour, query, current_total_time, current_distance)) {
+        error_msg = "Cannot reach mandatory tour stops"; final_route.message = error_msg; return final_route;
     }
-
-    double mandatory_visit_time = 0.0;
-    for (size_t i = 0; i < must_visit_indices.size(); ++i) {
-        mandatory_visit_time += graph.get_place(must_visit_indices[i]).visit_minutes;
+    if (!within_limits(current_total_time, current_distance, query)) {
+        error_msg = "Mandatory tour exceeds time or distance limit for the selected mode";
+        final_route.message = error_msg; return final_route;
     }
-
-    double current_total_time = mandatory_travel_time + mandatory_visit_time;
-
-    // 5. Greedy optional attraction selection based on benefit/time ratio
-    // If user specified a time budget (query.max_time_min > 0)
+    // Optional visits are inserted only if the entire selected-mode itinerary fits.
     if (query.max_time_min > 0.0) {
-        if (current_total_time > query.max_time_min) {
-            error_msg = "Mandatory tour stops require " + std::to_string(static_cast<int>(current_total_time)) +
-                        " min, exceeding time budget of " + std::to_string(static_cast<int>(query.max_time_min)) + " min.";
-            final_route.message = error_msg;
-            return final_route;
-        }
-
         struct OptionalCandidate {
             int node_idx = -1;
             double benefit = 0.0;
@@ -266,42 +258,23 @@ RouteResult Tour::plan_tour(
         // Greedy insertion of candidates into tour at position minimizing travel time increase
         for (size_t c = 0; c < optional_pool.size(); ++c) {
             int cand_idx = optional_pool[c].node_idx;
-            int cand_visit = optional_pool[c].visit_min;
-
-            // Find best insertion position between i and i+1
-            size_t best_insert_pos = 0;
-            double min_detour_time = 1e9;
-
-            for (size_t i = 0; i + 1 < current_tour.size(); ++i) {
-                int u = current_tour[i];
-                int v = current_tour[i + 1];
-                double old_leg = calculate_leg_travel_time(graph, u, v, query);
-                double leg1 = calculate_leg_travel_time(graph, u, cand_idx, query);
-                double leg2 = calculate_leg_travel_time(graph, cand_idx, v, query);
-                double detour = (leg1 + leg2) - old_leg;
-
-                if (detour < min_detour_time) {
-                    min_detour_time = detour;
-                    best_insert_pos = i + 1;
+            ds::DynArray<int> best_tour;
+            double best_time = 1e100, best_distance = 0.0;
+            for (size_t pos = 1; pos < current_tour.size(); ++pos) {
+                ds::DynArray<int> candidate;
+                for (size_t i = 0; i < current_tour.size(); ++i) {
+                    if (i == pos) candidate.push_back(cand_idx);
+                    candidate.push_back(current_tour[i]);
+                }
+                double time, distance;
+                if (measure_tour(graph, candidate, query, time, distance) &&
+                    within_limits(time, distance, query) && time < best_time) {
+                    best_time = time; best_distance = distance; best_tour = std::move(candidate);
                 }
             }
-
-            if (min_detour_time < 1e8) {
-                double added_time = min_detour_time + cand_visit;
-                if (current_total_time + added_time <= query.max_time_min) {
-                    // Insert into tour
-                    ds::DynArray<int> new_tour;
-                    new_tour.reserve(current_tour.size() + 1);
-                    for (size_t i = 0; i < best_insert_pos; ++i) {
-                        new_tour.push_back(current_tour[i]);
-                    }
-                    new_tour.push_back(cand_idx);
-                    for (size_t i = best_insert_pos; i < current_tour.size(); ++i) {
-                        new_tour.push_back(current_tour[i]);
-                    }
-                    current_tour = std::move(new_tour);
-                    current_total_time += added_time;
-                }
+            if (!best_tour.empty()) {
+                current_tour = std::move(best_tour);
+                current_total_time = best_time; current_distance = best_distance;
             }
         }
     }
@@ -326,7 +299,7 @@ RouteResult Tour::plan_tour(
         for (size_t m = 0; m < query.must_visit.size(); ++m) {
             if (query.must_visit[m] == pu.id) { is_must = true; break; }
         }
-        int visit_min = (is_start_node && start_idx != end_idx) ? 0 : pu.visit_minutes;
+        int visit_min = is_start_node ? 0 : pu.visit_minutes;
         final_route.stops.push_back(PlannedStop{pu.id, pu.name, visit_min, is_must, is_start_node, false});
         final_route.total_visit_time_min += visit_min;
 
@@ -377,6 +350,10 @@ RouteResult Tour::plan_tour(
 
     final_route.total_time_min = final_route.total_travel_time_min + final_route.total_visit_time_min;
     final_route.demo_index = Scoring::compute_demo_index(final_route.balanced_cost);
+    if (!within_limits(final_route.total_time_min, final_route.total_distance_km, query)) {
+        error_msg = "Final itinerary exceeds time or distance limit";
+        final_route.message = error_msg; return final_route;
+    }
     final_route.found = true;
     final_route.message = "Personalized tour planned successfully (" +
                           std::to_string(current_tour.size()) + " stops).";

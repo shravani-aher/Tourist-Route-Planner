@@ -117,8 +117,8 @@ ds::DynArray<RouteResult> Alternatives::generate_ranked_alternatives(
     }
 
     // 3. Filter candidates by hard limits and max detour ratio (1.75x shortest)
-    const double kDetourRatio = 1.75;
-    double max_allowed_distance = (shortest_dist > 0.0) ? (shortest_dist * kDetourRatio) : 1e9;
+    const double kDetourRatio = query.max_detour_ratio;
+    double max_allowed_distance = (shortest_dist > 0.0 && kDetourRatio > 0.0) ? (shortest_dist * kDetourRatio) : 1e100;
 
     ds::DynArray<RouteResult> feasible_candidates;
     for (size_t i = 0; i < candidates.size(); ++i) {
@@ -140,10 +140,17 @@ ds::DynArray<RouteResult> Alternatives::generate_ranked_alternatives(
     }
 
     // 4. Rank candidates using hand-written merge sort
-    auto route_comparator = [](const RouteResult& a, const RouteResult& b) {
-        if (std::abs(a.balanced_cost - b.balanced_cost) > 1e-6) {
-            return a.balanced_cost < b.balanced_cost;
+    auto objective = [&](const RouteResult& r) {
+        double cost = 0.0;
+        for (const auto& leg : r.legs) {
+            cost += Scoring::compute_edge_cost(*graph.get_road(leg.road_id),
+                graph.get_place(leg.to_idx), query.primary_mode, query.weights, query.interests);
         }
+        return cost;
+    };
+    auto route_comparator = [&](const RouteResult& a, const RouteResult& b) {
+        double ac = objective(a), bc = objective(b);
+        if (std::abs(ac - bc) > 1e-6) return ac < bc;
         if (std::abs(a.total_travel_time_min - b.total_travel_time_min) > 1e-6) {
             return a.total_travel_time_min < b.total_travel_time_min;
         }
@@ -173,7 +180,9 @@ ds::DynArray<RouteResult> Alternatives::generate_ranked_alternatives(
             }
         }
         if (!too_similar) {
-            selected.push_back(cand);
+            auto labeled = cand;
+            labeled.mode_label = selected.empty() ? mode_to_string(query.primary_mode) : "alternative_" + std::to_string(selected.size() + 1);
+            selected.push_back(labeled);
         }
     }
 

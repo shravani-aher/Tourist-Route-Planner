@@ -54,6 +54,7 @@ struct RouteQuery {
     double max_time_min = -1.0;     // <= 0 means unlimited
     double max_distance_km = -1.0; // <= 0 means unlimited
     int k_alternatives = 5;
+    double max_detour_ratio = -1.0; // explicit opt-in; no hidden cap
 };
 
 struct RouteLeg {

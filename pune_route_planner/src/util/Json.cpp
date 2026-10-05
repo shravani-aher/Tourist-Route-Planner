@@ -2,6 +2,8 @@
 #include <cctype>
 #include <iomanip>
 #include <sstream>
+#include <cmath>
+#include <limits>
 
 namespace util {
 
@@ -102,7 +104,9 @@ void JsonValue::serialize_internal(std::string& out, int indent, int current_ind
             break;
         case JsonType::Number: {
             // Check if whole integer
-            if (num_val == static_cast<int64_t>(num_val)) {
+            if (!std::isfinite(num_val)) {
+                out += "null";
+            } else if (num_val >= -9223372036854775808.0 && num_val < 9223372036854775808.0 && num_val == std::trunc(num_val)) {
                 out += std::to_string(static_cast<int64_t>(num_val));
             } else {
                 std::ostringstream ss;
@@ -177,6 +181,7 @@ class JsonParser {
     std::string_view src;
     size_t pos = 0;
     std::string error;
+    size_t depth = 0;
 
     void skip_whitespace() {
         while (pos < src.size() && (src[pos] == ' ' || src[pos] == '\t' || src[pos] == '\r' || src[pos] == '\n')) {
@@ -227,16 +232,36 @@ class JsonParser {
                     case 'r': s += '\r'; break;
                     case 't': s += '\t'; break;
                     case 'u': {
-                        // Minimal 4-hex unicode skip/fallback
-                        if (pos + 4 <= src.size()) {
-                            pos += 4;
-                            s += '?';
-                        }
+                        auto hex4 = [&]() -> int {
+                            if (pos + 4 > src.size()) { error = "Incomplete Unicode escape"; return -1; }
+                            int value = 0;
+                            for (int i = 0; i < 4; ++i) {
+                                char h = src[pos++]; int digit;
+                                if (h >= '0' && h <= '9') digit = h - '0';
+                                else if (h >= 'a' && h <= 'f') digit = h - 'a' + 10;
+                                else if (h >= 'A' && h <= 'F') digit = h - 'A' + 10;
+                                else { error = "Invalid Unicode escape"; return -1; }
+                                value = value * 16 + digit;
+                            }
+                            return value;
+                        };
+                        int cp = hex4(); if (cp < 0) return "";
+                        if (cp >= 0xD800 && cp <= 0xDBFF) {
+                            if (src.substr(pos, 2) != "\\u") { error = "Missing low surrogate"; return ""; }
+                            pos += 2; int low = hex4();
+                            if (low < 0xDC00 || low > 0xDFFF) { error = "Invalid low surrogate"; return ""; }
+                            cp = 0x10000 + ((cp - 0xD800) << 10) + low - 0xDC00;
+                        } else if (cp >= 0xDC00 && cp <= 0xDFFF) { error = "Unpaired low surrogate"; return ""; }
+                        if (cp < 0x80) s += static_cast<char>(cp);
+                        else if (cp < 0x800) { s += static_cast<char>(0xC0 | (cp >> 6)); s += static_cast<char>(0x80 | (cp & 63)); }
+                        else if (cp < 0x10000) { s += static_cast<char>(0xE0 | (cp >> 12)); s += static_cast<char>(0x80 | ((cp >> 6) & 63)); s += static_cast<char>(0x80 | (cp & 63)); }
+                        else { s += static_cast<char>(0xF0 | (cp >> 18)); s += static_cast<char>(0x80 | ((cp >> 12) & 63)); s += static_cast<char>(0x80 | ((cp >> 6) & 63)); s += static_cast<char>(0x80 | (cp & 63)); }
                         break;
                     }
-                    default: s += esc; break;
+                    default: error = "Invalid string escape"; return "";
                 }
             } else {
+                if (static_cast<unsigned char>(c) < 0x20) { error = "Unescaped control character"; return ""; }
                 s += c;
             }
         }
@@ -248,19 +273,27 @@ class JsonParser {
         skip_whitespace();
         size_t start = pos;
         if (pos < src.size() && src[pos] == '-') pos++;
-        while (pos < src.size() && std::isdigit(static_cast<unsigned char>(src[pos]))) pos++;
+        if (pos >= src.size() || !std::isdigit(static_cast<unsigned char>(src[pos]))) {
+            error = "Expected number digit"; return JsonValue();
+        }
+        if (src[pos] == '0') ++pos;
+        else while (pos < src.size() && std::isdigit(static_cast<unsigned char>(src[pos]))) ++pos;
         if (pos < src.size() && src[pos] == '.') {
-            pos++;
-            while (pos < src.size() && std::isdigit(static_cast<unsigned char>(src[pos]))) pos++;
+            ++pos; size_t digits = pos;
+            while (pos < src.size() && std::isdigit(static_cast<unsigned char>(src[pos]))) ++pos;
+            if (digits == pos) { error = "Missing fractional digits"; return JsonValue(); }
         }
         if (pos < src.size() && (src[pos] == 'e' || src[pos] == 'E')) {
-            pos++;
-            if (pos < src.size() && (src[pos] == '+' || src[pos] == '-')) pos++;
-            while (pos < src.size() && std::isdigit(static_cast<unsigned char>(src[pos]))) pos++;
+            ++pos;
+            if (pos < src.size() && (src[pos] == '+' || src[pos] == '-')) ++pos;
+            size_t digits = pos;
+            while (pos < src.size() && std::isdigit(static_cast<unsigned char>(src[pos]))) ++pos;
+            if (digits == pos) { error = "Missing exponent digits"; return JsonValue(); }
         }
         std::string num_str(src.substr(start, pos - start));
         try {
             double val = std::stod(num_str);
+            if (!std::isfinite(val)) { error = "Non-finite number"; return JsonValue(); }
             return JsonValue(val);
         } catch (...) {
             error = "Invalid number format: " + num_str;
@@ -309,6 +342,7 @@ class JsonParser {
             }
             JsonValue val = parse_value();
             if (!error.empty()) return JsonValue();
+            if (obj.has_key(key)) { error = "Duplicate object key"; return JsonValue(); }
             obj[key] = std::move(val);
             if (match('}')) break;
             if (!match(',')) {
@@ -347,9 +381,11 @@ public:
         } else if (c == '"') {
             return JsonValue(parse_string());
         } else if (c == '[') {
-            return parse_array();
+            if (++depth > 64) { error = "Maximum nesting depth exceeded"; return JsonValue(); }
+            auto v = parse_array(); --depth; return v;
         } else if (c == '{') {
-            return parse_object();
+            if (++depth > 64) { error = "Maximum nesting depth exceeded"; return JsonValue(); }
+            auto v = parse_object(); --depth; return v;
         } else if (c == '-' || std::isdigit(static_cast<unsigned char>(c))) {
             return parse_number();
         }
@@ -357,13 +393,18 @@ public:
         return JsonValue();
     }
 
+    JsonValue parse_document() {
+        auto value = parse_value(); skip_whitespace();
+        if (error.empty() && pos != src.size()) error = "Trailing content after JSON";
+        return value;
+    }
     const std::string& get_error() const { return error; }
 };
 
 JsonValue JsonValue::parse(std::string_view input, std::string* error_out) {
     JsonParser parser(input);
-    JsonValue val = parser.parse_value();
-    if (error_out && !parser.get_error().empty()) {
+    JsonValue val = parser.parse_document();
+    if (error_out) {
         *error_out = parser.get_error();
     }
     return val;

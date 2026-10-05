@@ -3,6 +3,8 @@
 #include <sstream>
 #include <string>
 #include <memory>
+#include <cmath>
+#include <mutex>
 
 #include "../third_party/httplib.h"
 
@@ -14,8 +16,64 @@
 #include "planner/Dijkstra.h"
 #include "planner/Alternatives.h"
 #include "planner/Tour.h"
+#include "planner/Solve.h"
 #include "planner/Dynamic.h"
 #include "util/Json.h"
+
+static void json_error(httplib::Response& res, const std::string& message) {
+    res.status = 400;
+    auto body = util::JsonValue::object(); body["error"] = message;
+    res.set_content(body.serialize(), "application/json");
+}
+static std::string validate_request(const util::JsonValue& body, bool route) {
+    if (!body.is_object()) return "Request must be a JSON object";
+    if (route) {
+        for (const auto& key : {"start", "end"})
+            if (!body[key].is_string() || body[key].as_string().empty()) return std::string(key) + " must be a nonempty string";
+        if (body.has_key("mode")) {
+            const auto& v = body["mode"];
+            if (!v.is_string() || (v.as_string() != "balanced" && v.as_string() != "shortest" &&
+                v.as_string() != "fastest" && v.as_string() != "scenic" && v.as_string() != "least_crowded")) return "Unknown route mode";
+        }
+        for (const auto& key : {"maxTimeMin", "maxDistanceKm", "maxDetourRatio", "k"}) {
+            if (!body.has_key(key)) continue;
+            const auto& v = body[key];
+            if (!v.is_number() || !std::isfinite(v.as_double())) return std::string(key) + " must be a finite number";
+            double n = v.as_double();
+            if (std::string(key) == "k") {
+                if (n < 1 || n > 20 || std::floor(n) != n) return "k must be an integer from 1 to 20";
+            } else if (std::string(key) == "maxDetourRatio") {
+                if (n != -1 && n < 1) return "maxDetourRatio must be -1 or at least 1";
+            } else if (n != -1 && n <= 0) return std::string(key) + " must be positive or -1 (unlimited)";
+        }
+        for (const auto& key : {"interests", "avoid", "mustVisit"}) {
+            if (!body.has_key(key)) continue;
+            if (!body[key].is_array()) return std::string(key) + " must be an array of strings";
+            for (const auto& item : body[key].as_array())
+                if (!item.is_string() || item.as_string().empty()) return std::string(key) + " must contain nonempty strings";
+        }
+        if (body.has_key("weights")) {
+            if (!body["weights"].is_object()) return "weights must be an object";
+            for (const auto& key : {"wd", "wt", "ws", "wc", "wp"}) {
+                const auto& w = body["weights"];
+                if (w.has_key(key) && (!w[key].is_number() || !std::isfinite(w[key].as_double()) || w[key].as_double() < 0 || w[key].as_double() > 1))
+                    return "weights must be finite numbers from 0 to 1";
+            }
+        }
+    } else {
+        if (!body["type"].is_string()) return "type must be a string";
+        const std::string t = body["type"].as_string();
+        if (t != "block" && t != "unblock" && t != "traffic" && t != "road_crowd" && t != "place_crowd") return "Unknown update type";
+        const char* key = t == "place_crowd" ? "placeId" : "roadId";
+        if (!body[key].is_string() || body[key].as_string().empty()) return std::string(key) + " must be a nonempty string";
+        if (t != "block" && t != "unblock") {
+            const auto& v = body["value"];
+            if (!v.is_number() || !std::isfinite(v.as_double()) || v.as_double() < 0 || v.as_double() > 10) return "value must be a finite number from 0 to 10";
+            if (t == "place_crowd" && std::floor(v.as_double()) != v.as_double()) return "place crowd must be an integer";
+        }
+    }
+    return "";
+}
 
 static bool load_graph_from_json(const std::string& path, ds::Graph& graph, ds::Trie& trie) {
     std::ifstream file(path);
@@ -223,7 +281,7 @@ static util::JsonValue serialize_graph(const ds::Graph& graph, const planner::Dy
 }
 
 int main(int argc, char** argv) {
-    std::string data_path = "data/pune_demo.json";
+    std::string data_path = "tests/fixtures/pune_demo.json";
     std::string web_dir = "web";
     int port = 8080;
 
@@ -238,11 +296,11 @@ int main(int argc, char** argv) {
     ds::Trie trie;
     if (!load_graph_from_json(data_path, graph, trie)) {
         // Fallback search paths
-        if (load_graph_from_json("../data/pune_demo.json", graph, trie)) {
-            data_path = "../data/pune_demo.json";
+        if (load_graph_from_json("../tests/fixtures/pune_demo.json", graph, trie)) {
+            data_path = "../tests/fixtures/pune_demo.json";
             web_dir = "../web";
-        } else if (load_graph_from_json("pune_route_planner/data/pune_demo.json", graph, trie)) {
-            data_path = "pune_route_planner/data/pune_demo.json";
+        } else if (load_graph_from_json("pune_route_planner/tests/fixtures/pune_demo.json", graph, trie)) {
+            data_path = "pune_route_planner/tests/fixtures/pune_demo.json";
             web_dir = "pune_route_planner/web";
         } else {
             std::cerr << "Fatal error: Could not find pune_demo.json!" << std::endl;
@@ -253,6 +311,8 @@ int main(int argc, char** argv) {
     planner::DynamicManager dynamic_mgr(graph);
 
     httplib::Server svr;
+    std::mutex state_mutex;
+    svr.set_payload_max_length(64 * 1024);
 
     // CORS headers for all responses
     svr.set_default_headers({
@@ -261,18 +321,21 @@ int main(int argc, char** argv) {
         {"Access-Control-Allow-Headers", "Content-Type"}
     });
 
-    svr.Options(R"(.*)", [](const httplib::Request&, httplib::Response& res) {
+    svr.Options(R"(.*)", [&](const httplib::Request&, httplib::Response& res) {
+        std::lock_guard<std::mutex> lock(state_mutex);
         res.status = 200;
     });
 
     // 1. GET /api/graph
     svr.Get("/api/graph", [&](const httplib::Request&, httplib::Response& res) {
+        std::lock_guard<std::mutex> lock(state_mutex);
         util::JsonValue g_json = serialize_graph(graph, dynamic_mgr);
         res.set_content(g_json.serialize(), "application/json");
     });
 
     // 2. GET /api/autocomplete?q=...
     svr.Get("/api/autocomplete", [&](const httplib::Request& req, httplib::Response& res) {
+        std::lock_guard<std::mutex> lock(state_mutex);
         std::string q = req.has_param("q") ? req.get_param_value("q") : "";
         auto matches = trie.search_prefix(q, 10);
         util::JsonValue arr = util::JsonValue::array();
@@ -287,20 +350,21 @@ int main(int argc, char** argv) {
 
     // 3. POST /api/route
     svr.Post("/api/route", [&](const httplib::Request& req, httplib::Response& res) {
+        std::lock_guard<std::mutex> lock(state_mutex);
         std::string err;
         util::JsonValue body = util::JsonValue::parse(req.body, &err);
         if (!err.empty()) {
-            res.status = 400;
-            res.set_content("{\"error\":\"Invalid JSON: " + err + "\"}", "application/json");
+            json_error(res, "Invalid JSON: " + err);
             return;
         }
 
+        auto schema_error = validate_request(body, true);
+        if (!schema_error.empty()) { json_error(res, schema_error); return; }
         std::string start_id = body["start"].as_string();
         std::string end_id = body["end"].as_string();
 
         if (start_id.empty() || end_id.empty()) {
-            res.status = 400;
-            res.set_content("{\"error\":\"Missing start or end place ID\"}", "application/json");
+            json_error(res, "Missing start or end place ID");
             return;
         }
 
@@ -308,8 +372,7 @@ int main(int argc, char** argv) {
         int end_idx = graph.get_place_index(end_id);
 
         if (start_idx < 0 || end_idx < 0) {
-            res.status = 400;
-            res.set_content("{\"error\":\"Invalid start or end place ID not found in Pune network\"}", "application/json");
+            json_error(res, "Invalid start or end place ID not found in Pune network");
             return;
         }
 
@@ -320,6 +383,7 @@ int main(int argc, char** argv) {
         query.max_time_min = body["maxTimeMin"].as_double(-1.0);
         query.max_distance_km = body["maxDistanceKm"].as_double(-1.0);
         query.k_alternatives = body["k"].as_int(5);
+        query.max_detour_ratio = body["maxDetourRatio"].as_double(-1.0);
 
         // Parse weights if provided
         if (body.has_key("weights")) {
@@ -333,8 +397,7 @@ int main(int argc, char** argv) {
 
         std::string weight_err;
         if (!query.weights.validate_and_normalize(weight_err)) {
-            res.status = 400;
-            res.set_content("{\"error\":\"" + weight_err + "\"}", "application/json");
+            json_error(res, weight_err);
             return;
         }
 
@@ -366,10 +429,9 @@ int main(int argc, char** argv) {
         if (!query.must_visit.empty()) {
             // Personalized Tour mode
             std::string tour_err;
-            planner::RouteResult tour_res = planner::Tour::plan_tour(graph, query, tour_err);
+            planner::RouteResult tour_res = planner::solve(graph, query).best;
             if (!tour_res.found) {
-                res.status = 400;
-                res.set_content("{\"error\":\"" + tour_err + "\"}", "application/json");
+                json_error(res, tour_res.message);
                 return;
             }
 
@@ -382,13 +444,10 @@ int main(int argc, char** argv) {
             resp["ranked_routes"] = ranked_arr;
         } else {
             // Point-to-point mode with full 5-mode comparison and K-alternatives
-            auto ranked = planner::Alternatives::generate_ranked_alternatives(
-                graph, start_idx, end_idx, query
-            );
+            auto ranked = planner::solve(graph, query).ranked;
 
             if (ranked.empty()) {
-                res.status = 400;
-                res.set_content("{\"error\":\"No feasible route found in this candidate pool.\"}", "application/json");
+                json_error(res, "No feasible route found in this candidate pool.");
                 return;
             }
 
@@ -428,20 +487,21 @@ int main(int argc, char** argv) {
 
     // 4. POST /api/update
     svr.Post("/api/update", [&](const httplib::Request& req, httplib::Response& res) {
+        std::lock_guard<std::mutex> lock(state_mutex);
         std::string err;
         util::JsonValue body = util::JsonValue::parse(req.body, &err);
         if (!err.empty()) {
-            res.status = 400;
-            res.set_content("{\"error\":\"Invalid JSON: " + err + "\"}", "application/json");
+            json_error(res, "Invalid JSON: " + err);
             return;
         }
 
+        auto schema_error = validate_request(body, false);
+        if (!schema_error.empty()) { json_error(res, schema_error); return; }
         std::string type_str = body["type"].as_string();
-        std::string target_id = body.has_key("roadId") ? body["roadId"].as_string() : body["placeId"].as_string();
+        std::string target_id = type_str == "place_crowd" ? body["placeId"].as_string() : body["roadId"].as_string();
 
         if (target_id.empty()) {
-            res.status = 400;
-            res.set_content("{\"error\":\"Missing roadId or placeId\"}", "application/json");
+            json_error(res, "Missing roadId or placeId");
             return;
         }
 
@@ -465,8 +525,7 @@ int main(int argc, char** argv) {
             type = planner::UpdateType::ChangePlaceCrowd;
             num_val = body["value"].as_double(5.0);
         } else {
-            res.status = 400;
-            res.set_content("{\"error\":\"Unknown update type: " + type_str + "\"}", "application/json");
+            json_error(res, "Unknown update type: " + type_str + "");
             return;
         }
 
@@ -474,15 +533,14 @@ int main(int argc, char** argv) {
         std::string op_err;
         bool success = dynamic_mgr.apply_update(type, target_id, num_val, bool_val, diff, op_err);
         if (!success) {
-            res.status = 400;
-            res.set_content("{\"error\":\"" + op_err + "\"}", "application/json");
+            json_error(res, op_err);
             return;
         }
 
         util::JsonValue resp = util::JsonValue::object();
         resp["success"] = true;
         resp["diff"] = serialize_diff(diff);
-        if (dynamic_mgr.has_active_route()) {
+        if (dynamic_mgr.has_active_query()) {
             resp["current_route"] = serialize_route(dynamic_mgr.current_route(), graph);
         }
         resp["graph"] = serialize_graph(graph, dynamic_mgr);
@@ -492,19 +550,19 @@ int main(int argc, char** argv) {
 
     // 5. POST /api/undo
     svr.Post("/api/undo", [&](const httplib::Request&, httplib::Response& res) {
+        std::lock_guard<std::mutex> lock(state_mutex);
         planner::RouteDiff diff;
         std::string err;
         bool ok = dynamic_mgr.undo(diff, err);
         if (!ok) {
-            res.status = 400;
-            res.set_content("{\"error\":\"" + err + "\"}", "application/json");
+            json_error(res, err);
             return;
         }
 
         util::JsonValue resp = util::JsonValue::object();
         resp["success"] = true;
         resp["diff"] = serialize_diff(diff);
-        if (dynamic_mgr.has_active_route()) {
+        if (dynamic_mgr.has_active_query()) {
             resp["current_route"] = serialize_route(dynamic_mgr.current_route(), graph);
         }
         resp["graph"] = serialize_graph(graph, dynamic_mgr);
@@ -514,13 +572,13 @@ int main(int argc, char** argv) {
 
     // 6. POST /api/simulate
     svr.Post("/api/simulate", [&](const httplib::Request&, httplib::Response& res) {
+        std::lock_guard<std::mutex> lock(state_mutex);
         std::string event_title;
         planner::RouteDiff diff;
         std::string err;
         bool ok = dynamic_mgr.trigger_next_simulated_event(event_title, diff, err);
         if (!ok) {
-            res.status = 400;
-            res.set_content("{\"error\":\"" + err + "\"}", "application/json");
+            json_error(res, err);
             return;
         }
 
@@ -528,7 +586,7 @@ int main(int argc, char** argv) {
         resp["success"] = true;
         resp["event_title"] = event_title;
         resp["diff"] = serialize_diff(diff);
-        if (dynamic_mgr.has_active_route()) {
+        if (dynamic_mgr.has_active_query()) {
             resp["current_route"] = serialize_route(dynamic_mgr.current_route(), graph);
         }
         resp["graph"] = serialize_graph(graph, dynamic_mgr);
@@ -538,6 +596,7 @@ int main(int argc, char** argv) {
 
     // 7. GET /api/stats
     svr.Get("/api/stats", [&](const httplib::Request&, httplib::Response& res) {
+        std::lock_guard<std::mutex> lock(state_mutex);
         util::JsonValue stats = util::JsonValue::object();
         stats["num_places"] = static_cast<int64_t>(graph.num_places());
         stats["num_roads"] = static_cast<int64_t>(graph.num_roads());

@@ -61,6 +61,7 @@ public:
     static RouteDiff compute_diff(const RouteResult& old_r, const RouteResult& new_r);
 
     const RouteResult& current_route() const { return last_route_; }
+    bool has_active_query() const { return has_active_query_; }
     bool has_active_route() const { return has_active_query_ && last_route_.found; }
 };
 

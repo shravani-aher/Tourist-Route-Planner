@@ -2,6 +2,7 @@
 #include "Dijkstra.h"
 #include "Alternatives.h"
 #include "Tour.h"
+#include "Solve.h"
 #include <unordered_set>
 #include <sstream>
 #include <iomanip>
@@ -224,16 +225,7 @@ bool DynamicManager::apply_update(
             new_route.found = false;
             new_route.message = "Closure renders one or more mandatory stops unreachable.";
         } else {
-            if (!last_query_.must_visit.empty()) {
-                std::string err;
-                new_route = Tour::plan_tour(graph_, last_query_, err);
-            } else {
-                Dijkstra::Options opts;
-                opts.mode = last_query_.primary_mode;
-                opts.weights = last_query_.weights;
-                opts.interests = last_query_.interests;
-                new_route = Dijkstra::find_path(graph_, start_idx, end_idx, opts);
-            }
+            new_route = solve(graph_, last_query_).best;
         }
 
         diff_out = compute_diff(last_route_, new_route);
@@ -270,20 +262,8 @@ bool DynamicManager::undo(RouteDiff& diff_out, std::string& error_msg) {
     graph_.bump_version();
 
     if (has_active_query_) {
-        int start_idx = graph_.get_place_index(last_query_.start_id);
-        int end_idx = graph_.get_place_index(last_query_.end_id);
-
         RouteResult new_route;
-        if (!last_query_.must_visit.empty()) {
-            std::string err;
-            new_route = Tour::plan_tour(graph_, last_query_, err);
-        } else {
-            Dijkstra::Options opts;
-            opts.mode = last_query_.primary_mode;
-            opts.weights = last_query_.weights;
-            opts.interests = last_query_.interests;
-            new_route = Dijkstra::find_path(graph_, start_idx, end_idx, opts);
-        }
+        new_route = solve(graph_, last_query_).best;
 
         diff_out = compute_diff(last_route_, new_route);
         diff_out.summary = "Undo applied: " + top.description + " | " + diff_out.summary;
