@@ -1,0 +1,387 @@
+#include "Tour.h"
+#include "Dijkstra.h"
+#include "Scoring.h"
+#include "../ds/Sort.h"
+#include <algorithm>
+#include <cmath>
+
+namespace planner {
+
+double Tour::calculate_leg_travel_time(
+    const ds::Graph& graph,
+    int u,
+    int v,
+    const RouteQuery& query
+) {
+    if (u == v) return 0.0;
+    Dijkstra::Options opts;
+    opts.mode = Mode::Fastest;
+    opts.weights = query.weights;
+    opts.interests = query.interests;
+    RouteResult r = Dijkstra::find_path(graph, u, v, opts);
+    if (!r.found) return 1e9;
+    return r.total_travel_time_min;
+}
+
+ds::DynArray<int> Tour::nearest_neighbor_order(
+    const ds::Graph& graph,
+    int start_idx,
+    int end_idx,
+    const ds::DynArray<int>& stops,
+    const RouteQuery& query
+) {
+    ds::DynArray<int> ordered;
+    ordered.push_back(start_idx);
+
+    ds::DynArray<int> unvisited = stops;
+    int current = start_idx;
+
+    while (!unvisited.empty()) {
+        int best_idx = -1;
+        double best_time = 1e9;
+        size_t best_pos = 0;
+
+        for (size_t i = 0; i < unvisited.size(); ++i) {
+            int candidate = unvisited[i];
+            double t = calculate_leg_travel_time(graph, current, candidate, query);
+            if (t < best_time) {
+                best_time = t;
+                best_idx = candidate;
+                best_pos = i;
+            }
+        }
+
+        if (best_idx == -1) {
+            // Unreachable fallback: append remaining in default order
+            for (size_t i = 0; i < unvisited.size(); ++i) {
+                ordered.push_back(unvisited[i]);
+            }
+            break;
+        }
+
+        ordered.push_back(best_idx);
+        current = best_idx;
+
+        // Remove best_idx from unvisited
+        for (size_t i = best_pos; i + 1 < unvisited.size(); ++i) {
+            unvisited[i] = unvisited[i + 1];
+        }
+        unvisited.pop_back();
+    }
+
+    ordered.push_back(end_idx);
+    return ordered;
+}
+
+void Tour::apply_2opt(
+    const ds::Graph& graph,
+    ds::DynArray<int>& tour,
+    const RouteQuery& query,
+    int max_iterations
+) {
+    // 2-Opt local search: reverses sub-segments between intermediate stops
+    // (indices 1 to tour.size() - 2) to eliminate route self-crossings.
+    // Note: This is an O(K^2) heuristic improvement, not an exact TSP solver.
+    if (tour.size() <= 3) return;
+
+    bool improved = true;
+    int iter = 0;
+
+    while (improved && iter < max_iterations) {
+        improved = false;
+        ++iter;
+
+        for (size_t i = 1; i + 1 < tour.size() - 1; ++i) {
+            for (size_t j = i + 1; j < tour.size() - 1; ++j) {
+                double current_dist =
+                    calculate_leg_travel_time(graph, tour[i - 1], tour[i], query) +
+                    calculate_leg_travel_time(graph, tour[j], tour[j + 1], query);
+
+                double new_dist =
+                    calculate_leg_travel_time(graph, tour[i - 1], tour[j], query) +
+                    calculate_leg_travel_time(graph, tour[i], tour[j + 1], query);
+
+                if (new_dist < current_dist - 1e-4) {
+                    // Reverse subsegment from i to j
+                    size_t left = i;
+                    size_t right = j;
+                    while (left < right) {
+                        std::swap(tour[left], tour[right]);
+                        ++left;
+                        --right;
+                    }
+                    improved = true;
+                }
+            }
+        }
+    }
+}
+
+RouteResult Tour::plan_tour(
+    const ds::Graph& graph,
+    const RouteQuery& query,
+    std::string& error_msg
+) {
+    RouteResult final_route;
+    final_route.mode_label = "personalized_tour";
+
+    int start_idx = graph.get_place_index(query.start_id);
+    int end_idx = graph.get_place_index(query.end_id);
+
+    if (start_idx < 0) {
+        error_msg = "Start place ID not found: " + query.start_id;
+        final_route.message = error_msg;
+        return final_route;
+    }
+    if (end_idx < 0) {
+        error_msg = "End place ID not found: " + query.end_id;
+        final_route.message = error_msg;
+        return final_route;
+    }
+
+    // 1. Conflict detection: Check if any must-visit stop matches an avoided category
+    for (size_t i = 0; i < query.must_visit.size(); ++i) {
+        const std::string& mv_id = query.must_visit[i];
+        const ds::Place* p = graph.get_place(mv_id);
+        if (!p) {
+            error_msg = "Must-visit place ID not found: " + mv_id;
+            final_route.message = error_msg;
+            return final_route;
+        }
+        for (size_t a = 0; a < query.avoid.size(); ++a) {
+            if (p->has_category(query.avoid[a])) {
+                error_msg = "Conflict detected: Must-visit place '" + p->name +
+                            "' (" + p->id + ") has avoided category '" + query.avoid[a] + "'.";
+                final_route.message = error_msg;
+                return final_route;
+            }
+        }
+    }
+
+    // 2. Identify must-visit node indices
+    ds::DynArray<int> must_visit_indices;
+    for (size_t i = 0; i < query.must_visit.size(); ++i) {
+        int idx = graph.get_place_index(query.must_visit[i]);
+        if (idx != start_idx && idx != end_idx) {
+            // Avoid duplicate entries
+            bool already = false;
+            for (size_t j = 0; j < must_visit_indices.size(); ++j) {
+                if (must_visit_indices[j] == idx) { already = true; break; }
+            }
+            if (!already) {
+                must_visit_indices.push_back(idx);
+            }
+        }
+    }
+
+    // 3. Initial tour sequence via Nearest-Neighbor heuristic, then 2-opt refinement
+    ds::DynArray<int> current_tour = nearest_neighbor_order(
+        graph, start_idx, end_idx, must_visit_indices, query
+    );
+    apply_2opt(graph, current_tour, query);
+
+    // 4. Calculate mandatory tour time (travel + visit time of must-visits)
+    double mandatory_travel_time = 0.0;
+    for (size_t i = 0; i + 1 < current_tour.size(); ++i) {
+        double leg_t = calculate_leg_travel_time(graph, current_tour[i], current_tour[i + 1], query);
+        if (leg_t >= 1e8) {
+            error_msg = "Cannot reach next stop in tour: " + graph.get_place(current_tour[i + 1]).name;
+            final_route.message = error_msg;
+            return final_route;
+        }
+        mandatory_travel_time += leg_t;
+    }
+
+    double mandatory_visit_time = 0.0;
+    for (size_t i = 0; i < must_visit_indices.size(); ++i) {
+        mandatory_visit_time += graph.get_place(must_visit_indices[i]).visit_minutes;
+    }
+
+    double current_total_time = mandatory_travel_time + mandatory_visit_time;
+
+    // 5. Greedy optional attraction selection based on benefit/time ratio
+    // If user specified a time budget (query.max_time_min > 0)
+    if (query.max_time_min > 0.0) {
+        if (current_total_time > query.max_time_min) {
+            error_msg = "Mandatory tour stops require " + std::to_string(static_cast<int>(current_total_time)) +
+                        " min, exceeding time budget of " + std::to_string(static_cast<int>(query.max_time_min)) + " min.";
+            final_route.message = error_msg;
+            return final_route;
+        }
+
+        struct OptionalCandidate {
+            int node_idx = -1;
+            double benefit = 0.0;
+            int visit_min = 0;
+            double ratio = 0.0;
+        };
+
+        ds::DynArray<OptionalCandidate> optional_pool;
+        for (size_t i = 0; i < graph.num_places(); ++i) {
+            int idx = static_cast<int>(i);
+            if (idx == start_idx || idx == end_idx) continue;
+
+            // Check if already in tour
+            bool in_tour = false;
+            for (size_t j = 0; j < current_tour.size(); ++j) {
+                if (current_tour[j] == idx) { in_tour = true; break; }
+            }
+            if (in_tour) continue;
+
+            const ds::Place& p = graph.get_place(idx);
+
+            // Exclude avoided categories (Avoided categories exclude optional visits, not transit)
+            bool is_avoided = false;
+            for (size_t a = 0; a < query.avoid.size(); ++a) {
+                if (p.has_category(query.avoid[a])) {
+                    is_avoided = true;
+                    break;
+                }
+            }
+            if (is_avoided) continue;
+
+            // Calculate benefit
+            double benefit = 0.0;
+            if (query.interests.empty()) {
+                benefit = 1.0 + (10.0 - p.crowd) * 0.1; // fallback preference for scenic/less crowd
+            } else {
+                for (size_t c = 0; c < query.interests.size(); ++c) {
+                    if (p.has_category(query.interests[c])) {
+                        benefit += 1.0;
+                    }
+                }
+            }
+
+            if (benefit > 0.0) {
+                double r = benefit / static_cast<double>(p.visit_minutes);
+                optional_pool.push_back(OptionalCandidate{idx, benefit, p.visit_minutes, r});
+            }
+        }
+
+        // Sort candidates by benefit/time ratio descending using merge_sort
+        ds::merge_sort(optional_pool, [](const OptionalCandidate& a, const OptionalCandidate& b) {
+            return a.ratio > b.ratio; // descending
+        });
+
+        // Greedy insertion of candidates into tour at position minimizing travel time increase
+        for (size_t c = 0; c < optional_pool.size(); ++c) {
+            int cand_idx = optional_pool[c].node_idx;
+            int cand_visit = optional_pool[c].visit_min;
+
+            // Find best insertion position between i and i+1
+            size_t best_insert_pos = 0;
+            double min_detour_time = 1e9;
+
+            for (size_t i = 0; i + 1 < current_tour.size(); ++i) {
+                int u = current_tour[i];
+                int v = current_tour[i + 1];
+                double old_leg = calculate_leg_travel_time(graph, u, v, query);
+                double leg1 = calculate_leg_travel_time(graph, u, cand_idx, query);
+                double leg2 = calculate_leg_travel_time(graph, cand_idx, v, query);
+                double detour = (leg1 + leg2) - old_leg;
+
+                if (detour < min_detour_time) {
+                    min_detour_time = detour;
+                    best_insert_pos = i + 1;
+                }
+            }
+
+            if (min_detour_time < 1e8) {
+                double added_time = min_detour_time + cand_visit;
+                if (current_total_time + added_time <= query.max_time_min) {
+                    // Insert into tour
+                    ds::DynArray<int> new_tour;
+                    new_tour.reserve(current_tour.size() + 1);
+                    for (size_t i = 0; i < best_insert_pos; ++i) {
+                        new_tour.push_back(current_tour[i]);
+                    }
+                    new_tour.push_back(cand_idx);
+                    for (size_t i = best_insert_pos; i < current_tour.size(); ++i) {
+                        new_tour.push_back(current_tour[i]);
+                    }
+                    current_tour = std::move(new_tour);
+                    current_total_time += added_time;
+                }
+            }
+        }
+    }
+
+    // 6. Connect consecutive stops with Dijkstra paths
+    Dijkstra::Options leg_opts;
+    leg_opts.mode = query.primary_mode;
+    leg_opts.weights = query.weights;
+    leg_opts.interests = query.interests;
+
+    double total_scenic_weighted = 0.0;
+    double total_crowd_weighted = 0.0;
+
+    for (size_t s = 0; s + 1 < current_tour.size(); ++s) {
+        int u = current_tour[s];
+        int v = current_tour[s + 1];
+
+        // Record planned stop for node u
+        const auto& pu = graph.get_place(u);
+        bool is_start_node = (s == 0);
+        bool is_must = false;
+        for (size_t m = 0; m < query.must_visit.size(); ++m) {
+            if (query.must_visit[m] == pu.id) { is_must = true; break; }
+        }
+        int visit_min = (is_start_node && start_idx != end_idx) ? 0 : pu.visit_minutes;
+        final_route.stops.push_back(PlannedStop{pu.id, pu.name, visit_min, is_must, is_start_node, false});
+        final_route.total_visit_time_min += visit_min;
+
+        RouteResult leg_result = Dijkstra::find_path(graph, u, v, leg_opts);
+        if (!leg_result.found) {
+            error_msg = "Could not find valid path between " + pu.name + " and " + graph.get_place(v).name;
+            final_route.found = false;
+            final_route.message = error_msg;
+            return final_route;
+        }
+
+        // Append leg elements
+        if (s == 0) {
+            final_route.node_path.push_back(u);
+        }
+        for (size_t i = 1; i < leg_result.node_path.size(); ++i) {
+            final_route.node_path.push_back(leg_result.node_path[i]);
+        }
+        for (size_t i = 0; i < leg_result.road_path.size(); ++i) {
+            final_route.road_path.push_back(leg_result.road_path[i]);
+        }
+        for (size_t i = 0; i < leg_result.legs.size(); ++i) {
+            final_route.legs.push_back(leg_result.legs[i]);
+        }
+
+        final_route.total_distance_km += leg_result.total_distance_km;
+        final_route.total_travel_time_min += leg_result.total_travel_time_min;
+        total_scenic_weighted += leg_result.avg_scenic * leg_result.total_distance_km;
+        total_crowd_weighted += leg_result.avg_crowd * leg_result.total_travel_time_min;
+        final_route.balanced_cost += leg_result.balanced_cost;
+
+        for (size_t i = 0; i < leg_result.settled_order.size(); ++i) {
+            final_route.settled_order.push_back(leg_result.settled_order[i]);
+        }
+    }
+
+    // Add final stop
+    int last_idx = current_tour.back();
+    const auto& last_p = graph.get_place(last_idx);
+    final_route.stops.push_back(PlannedStop{last_p.id, last_p.name, 0, false, false, true});
+
+    if (final_route.total_distance_km > 0.0) {
+        final_route.avg_scenic = total_scenic_weighted / final_route.total_distance_km;
+    }
+    if (final_route.total_travel_time_min > 0.0) {
+        final_route.avg_crowd = total_crowd_weighted / final_route.total_travel_time_min;
+    }
+
+    final_route.total_time_min = final_route.total_travel_time_min + final_route.total_visit_time_min;
+    final_route.demo_index = Scoring::compute_demo_index(final_route.balanced_cost);
+    final_route.found = true;
+    final_route.message = "Personalized tour planned successfully (" +
+                          std::to_string(current_tour.size()) + " stops).";
+
+    return final_route;
+}
+
+} // namespace planner

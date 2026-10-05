@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pune Tourist Route Planner | Data Structures Project</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Top Notice Banner -->
+  <header class="app-header">
+    <div class="logo-area">
+      <div class="logo-badge">DS</div>
+      <div class="title-group">
+        <h1>Pune Tourist Route Planner</h1>
+        <p class="subtitle">Personalized Multi-Objective Routing with Custom Data Structures in C++17</p>
+      </div>
+    </div>
+    <div class="disclaimer-banner" id="disclaimerBanner">
+      <span class="warning-icon">&#9888;</span>
+      <span>Real attraction names; all numeric attributes and road corridors are synthetic classroom examples, not verified navigation or live conditions.</span>
+    </div>
+    <div class="header-actions">
+      <button class="btn btn-outline" id="btnStatsModal" title="View live DS metrics">
+        <span class="btn-icon">&#128202;</span> DS Telemetry
+      </button>
+      <button class="btn btn-primary" id="btnSimulateEvent" title="Simulate real-time traffic or road block via Queue">
+        <span class="btn-icon">&#9889;</span> Simulate Event
+      </button>
+      <button class="btn btn-secondary" id="btnUndoAction" title="Undo dynamic graph change via Stack" disabled>
+        <span class="btn-icon">&#8630;</span> Undo (<span id="undoCount">0</span>)
+      </button>
+    </div>
+  </header>
+
+  <!-- Live Status Bar -->
+  <section class="telemetry-bar">
+    <div class="telemetry-item">
+      <span class="tel-label">Graph Nodes:</span>
+      <span class="tel-val" id="telNodes">10</span>
+    </div>
+    <div class="telemetry-item">
+      <span class="tel-label">Corridors:</span>
+      <span class="tel-val" id="telRoads">22</span>
+    </div>
+    <div class="telemetry-item">
+      <span class="tel-label">DSU Components:</span>
+      <span class="tel-val tel-badge" id="telComponents">1 (Fully Connected)</span>
+    </div>
+    <div class="telemetry-item">
+      <span class="tel-label">Hash Table Load:</span>
+      <span class="tel-val" id="telHashLoad">0.68</span>
+    </div>
+    <div class="telemetry-item">
+      <span class="tel-label">Undo Stack:</span>
+      <span class="tel-val" id="telUndoDepth">0</span>
+    </div>
+    <div class="telemetry-item">
+      <span class="tel-label">Event Queue:</span>
+      <span class="tel-val" id="telEventQueue">5</span>
+    </div>
+  </section>
+
+  <!-- Dynamic Change Notification Banner -->
+  <div class="diff-banner hidden" id="diffBanner">
+    <div class="diff-header">
+      <strong id="diffTitle">Graph Updated</strong>
+      <button class="close-btn" id="btnCloseDiff">&times;</button>
+    </div>
+    <div class="diff-content" id="diffContent">
+      Road blocked. Recalculating route...
+    </div>
+  </div>
+
+  <!-- Main Application Container -->
+  <main class="main-layout">
+    <!-- LEFT PANEL: Controls & Preferences -->
+    <aside class="left-panel">
+      <form id="routeForm" class="control-form" onsubmit="return false;">
+        <!-- Origin & Destination -->
+        <div class="form-section">
+          <h2 class="section-title"><span class="step-num">1</span> Origin & Destination</h2>
+          
+          <div class="input-group">
+            <label for="startPlace">Starting Attraction</label>
+            <div class="autocomplete-wrapper">
+              <input type="text" id="startInput" placeholder="Search or select origin..." autocomplete="off">
+              <div class="autocomplete-dropdown hidden" id="startDropdown"></div>
+            </div>
+            <select id="startSelect" class="form-select"></select>
+          </div>
+
+          <div class="input-group">
+            <label for="endPlace">Final Destination</label>
+            <div class="autocomplete-wrapper">
+              <input type="text" id="endInput" placeholder="Search or select destination..." autocomplete="off">
+              <div class="autocomplete-dropdown hidden" id="endDropdown"></div>
+            </div>
+            <select id="endSelect" class="form-select"></select>
+          </div>
+        </div>
+
+        <!-- Mode Selector -->
+        <div class="form-section">
+          <h2 class="section-title"><span class="step-num">2</span> Optimization Objective</h2>
+          <div class="mode-grid">
+            <button type="button" class="mode-btn active" data-mode="balanced">
+              <div class="mode-name">&#9878; Balanced</div>
+              <div class="mode-desc">Custom weights</div>
+            </button>
+            <button type="button" class="mode-btn" data-mode="fastest">
+              <div class="mode-name">&#9889; Fastest</div>
+              <div class="mode-desc">Min travel time</div>
+            </button>
+            <button type="button" class="mode-btn" data-mode="shortest">
+              <div class="mode-name">&#128207; Shortest</div>
+              <div class="mode-desc">Min distance</div>
+            </button>
+            <button type="button" class="mode-btn" data-mode="scenic">
+              <div class="mode-name">&#127794; Scenic</div>
+              <div class="mode-desc">Low scenery penalty</div>
+            </button>
+            <button type="button" class="mode-btn" data-mode="least_crowded">
+              <div class="mode-name">&#129309; Least Crowded</div>
+              <div class="mode-desc">Low crowd exposure</div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Balanced Preference Weights Sliders -->
+        <div class="form-section" id="weightsSection">
+          <div class="weights-header">
+            <h2 class="section-title"><span class="step-num">3</span> Preference Weights</h2>
+            <button type="button" class="text-btn" id="btnResetWeights">Reset Defaults</button>
+          </div>
+          
+          <div class="slider-row">
+            <div class="slider-info">
+              <span>Distance (wd)</span>
+              <span id="wdVal">20%</span>
+            </div>
+            <input type="range" id="sliderWd" min="0" max="100" value="20" step="5">
+          </div>
+
+          <div class="slider-row">
+            <div class="slider-info">
+              <span>Travel Time (wt)</span>
+              <span id="wtVal">30%</span>
+            </div>
+            <input type="range" id="sliderWt" min="0" max="100" value="30" step="5">
+          </div>
+
+          <div class="slider-row">
+            <div class="slider-info">
+              <span>Scenic Quality (ws)</span>
+              <span id="wsVal">20%</span>
+            </div>
+            <input type="range" id="sliderWs" min="0" max="100" value="20" step="5">
+          </div>
+
+          <div class="slider-row">
+            <div class="slider-info">
+              <span>Crowd Avoidance (wc)</span>
+              <span id="wcVal">15%</span>
+            </div>
+            <input type="range" id="sliderWc" min="0" max="100" value="15" step="5">
+          </div>
+
+          <div class="slider-row">
+            <div class="slider-info">
+              <span>Interest Match (wp)</span>
+              <span id="wpVal">15%</span>
+            </div>
+            <input type="range" id="sliderWp" min="0" max="100" value="15" step="5">
+          </div>
+        </div>
+
+        <!-- Tourist Interests & Avoidances -->
+        <div class="form-section">
+          <h2 class="section-title"><span class="step-num">4</span> Interests & Avoidances</h2>
+          
+          <label class="sub-label">My Interests (Positive Match):</label>
+          <div class="chips-container" id="interestsChips">
+            <label class="chip"><input type="checkbox" value="heritage"> Heritage</label>
+            <label class="chip"><input type="checkbox" value="temple"> Temple</label>
+            <label class="chip"><input type="checkbox" value="culture"> Culture</label>
+            <label class="chip"><input type="checkbox" value="museum"> Museum</label>
+            <label class="chip"><input type="checkbox" value="garden"> Garden</label>
+            <label class="chip"><input type="checkbox" value="nature"> Nature</label>
+            <label class="chip"><input type="checkbox" value="wildlife"> Wildlife</label>
+          </div>
+
+          <label class="sub-label mt-2">Avoid Categories (Optional visit filter):</label>
+          <div class="chips-container" id="avoidChips">
+            <label class="chip chip-avoid"><input type="checkbox" value="heritage"> Heritage</label>
+            <label class="chip chip-avoid"><input type="checkbox" value="temple"> Temple</label>
+            <label class="chip chip-avoid"><input type="checkbox" value="culture"> Culture</label>
+            <label class="chip chip-avoid"><input type="checkbox" value="museum"> Museum</label>
+            <label class="chip chip-avoid"><input type="checkbox" value="garden"> Garden</label>
+            <label class="chip chip-avoid"><input type="checkbox" value="nature"> Nature</label>
+            <label class="chip chip-avoid"><input type="checkbox" value="wildlife"> Wildlife</label>
+          </div>
+        </div>
+
+        <!-- Mandatory Must-Visit & Constraints -->
+        <div class="form-section">
+          <h2 class="section-title"><span class="step-num">5</span> Stops & Time Budget</h2>
+          
+          <label class="sub-label">Must-Visit Stops (TSP Heuristic):</label>
+          <div class="multiselect-container" id="mustVisitContainer"></div>
+
+          <div class="input-row mt-2">
+            <div class="input-group">
+              <label for="timeBudgetInput">Time Budget (min)</label>
+              <input type="number" id="timeBudgetInput" placeholder="Unlimited" min="10" max="600" step="10">
+            </div>
+            <div class="input-group">
+              <label for="distLimitInput">Max Distance (km)</label>
+              <input type="number" id="distLimitInput" placeholder="Unlimited" min="1" max="100" step="1">
+            </div>
+          </div>
+        </div>
+
+        <button type="button" class="btn btn-primary btn-block btn-lg" id="btnPlanRoute">
+          <span class="btn-icon">&#128640;</span> Calculate Best Route
+        </button>
+      </form>
+    </aside>
+
+    <!-- CENTER PANEL: Interactive Schematic Map & Dijkstra Animation -->
+    <section class="center-panel">
+      <div class="map-toolbar">
+        <div class="map-legend">
+          <span class="legend-item"><span class="legend-color crowd-low"></span> Low Crowd</span>
+          <span class="legend-item"><span class="legend-color crowd-mid"></span> Moderate</span>
+          <span class="legend-item"><span class="legend-color crowd-high"></span> Heavy Crowd</span>
+          <span class="legend-item"><span class="legend-line-blocked"></span> Blocked</span>
+          <span class="legend-item"><span class="legend-line-route"></span> Active Route</span>
+        </div>
+
+        <!-- Dijkstra Algorithm Step-Through Visualizer -->
+        <div class="anim-controls">
+          <span class="anim-label">Dijkstra Visualizer:</span>
+          <button class="btn btn-xs" id="btnAnimPlay" title="Play animated node settlement">&#9654; Play</button>
+          <button class="btn btn-xs" id="btnAnimStep" title="Advance one node settlement">&#9197; Step</button>
+          <button class="btn btn-xs" id="btnAnimReset" title="Reset visualization">&#9209; Reset</button>
+          <span class="anim-status" id="animStatus">Ready</span>
+        </div>
+      </div>
+
+      <div class="canvas-container" id="canvasContainer">
+        <canvas id="mapCanvas"></canvas>
+        <div class="canvas-tooltip hidden" id="canvasTooltip"></div>
+      </div>
+
+      <!-- Quick Road / Place Interaction Panel -->
+      <div class="network-quick-panel">
+        <div class="quick-title">&#128736; Quick Dynamic Modifier (Click road or place to inspect):</div>
+        <div class="quick-controls" id="quickControlsArea">
+          <span class="placeholder-text">Click any corridor or attraction marker on the map to modify traffic, crowd or block status in real-time.</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT PANEL: Route Rankings, Comparison & Explanation -->
+    <aside class="right-panel">
+      <!-- Active Best Route Card -->
+      <div class="panel-block" id="activeRouteBlock">
+        <h2 class="section-title">
+          <span>&#11088; Recommended Route</span>
+          <span class="badge badge-primary" id="routeModeBadge">Balanced</span>
+        </h2>
+        
+        <div id="routeSummaryCard" class="summary-card">
+          <p class="placeholder-text">Select origin, destination and click "Calculate Best Route" to view personalized options.</p>
+        </div>
+      </div>
+
+      <!-- "Why This Route?" Explanation Box -->
+      <div class="panel-block" id="whyRouteBlock">
+        <h2 class="section-title">&#128161; Why This Route?</h2>
+        <div class="explanation-box" id="explanationContent">
+          <p class="placeholder-text">A transparent breakdown of cost factors, detour savings, and interest trade-offs will appear here.</p>
+        </div>
+      </div>
+
+      <!-- Ranked Alternatives List -->
+      <div class="panel-block" id="rankedBlock">
+        <h2 class="section-title">
+          <span>Ranked Alternatives</span>
+          <span class="badge" id="altCountBadge">0 routes</span>
+        </h2>
+        <div class="routes-list" id="routesList"></div>
+      </div>
+
+      <!-- 5-Objective Comparison Table -->
+      <div class="panel-block" id="comparisonBlock">
+        <h2 class="section-title">&#128202; Objective Comparison</h2>
+        <div class="table-responsive">
+          <table class="comparison-table" id="comparisonTable">
+            <thead>
+              <tr>
+                <th>Mode</th>
+                <th>Dist (km)</th>
+                <th>Time (min)</th>
+                <th>Scenic</th>
+                <th>Crowd</th>
+                <th>Score</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td colspan="6" class="placeholder-text text-center">No routes calculated yet</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- Modal for Data Structure Telemetry Details -->
+  <div class="modal hidden" id="statsModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Data Structure Concepts &amp; Live Telemetry</h3>
+        <button class="close-btn" id="btnCloseStatsModal">&times;</button>
+      </div>
+      <div class="modal-body" id="statsModalBody">
+        <div class="ds-grid">
+          <div class="ds-card">
+            <h4>1. Graph (Adjacency List)</h4>
+            <p><strong>ds/Graph.h</strong>: Nodes array + DynArray of Arcs {to, roadId}. Shared mutable Road table ensures two-way consistency on updates.</p>
+            <div class="ds-stat">Corridors: <span id="statRoadsCount">22</span> (Parallel &amp; Directed Support)</div>
+          </div>
+          <div class="ds-card">
+            <h4>2. Min-Heap Priority Queue</h4>
+            <p><strong>ds/MinHeap.h</strong>: Array binary heap with position array <code>pos_</code> enabling true O(log V) decrease-key. Zero std::priority_queue.</p>
+            <div class="ds-stat">Heap Peek: O(1) | Sift-Up/Down: O(log V)</div>
+          </div>
+          <div class="ds-card">
+            <h4>3. Hash Map (Separate Chaining)</h4>
+            <p><strong>ds/HashMap.h</strong>: FNV-1a 64-bit hash, dynamic bucket array, 0.75 load factor threshold with 2x rehashing.</p>
+            <div class="ds-stat">Load Factor: <span id="statHashLf">0.00</span> | Buckets: <span id="statHashBuckets">16</span></div>
+          </div>
+          <div class="ds-card">
+            <h4>4. Dynamic Array</h4>
+            <p><strong>ds/DynArray.h</strong>: Contiguous buffer, geometric doubling (growth=2), amortized O(1) push_back, optimal L1/L2 cache locality.</p>
+          </div>
+          <div class="ds-card">
+            <h4>5. Stack (Undo History)</h4>
+            <p><strong>ds/Stack.h</strong>: LIFO stack of inverse mutation records. Guarantees atomic O(1) rollback of closures and crowd spikes.</p>
+            <div class="ds-stat">Current Stack Depth: <span id="statUndoDepth">0</span></div>
+          </div>
+          <div class="ds-card">
+            <h4>6. Queue (BFS &amp; Events)</h4>
+            <p><strong>ds/Queue.h</strong>: Circular ring buffer FIFO queue. Drives BFS reachability verification and queued environmental simulation events.</p>
+            <div class="ds-stat">Pending Queue Events: <span id="statEventQueue">5</span></div>
+          </div>
+          <div class="ds-card">
+            <h4>7. Merge Sort (Stable Ranking)</h4>
+            <p><strong>ds/Sort.h</strong>: O(N log N) stable merge sort with multi-tier comparator (balanced cost &rarr; time &rarr; distance &rarr; road IDs).</p>
+          </div>
+          <div class="ds-card">
+            <h4>8. Extras: DSU &amp; Trie</h4>
+            <p><strong>ds/UnionFind.h</strong>: Path compression &amp; rank union for connected components.<br><strong>ds/Trie.h</strong>: Prefix tree autocomplete search box.</p>
+            <div class="ds-stat">Connected Components: <span id="statDsuComp">1</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

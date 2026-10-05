@@ -1,0 +1,41 @@
+{
+  "city": "Pune",
+  "data_status": "synthetic_demo",
+  "warning": "Real attraction names; all numeric attributes and road corridors are synthetic classroom examples, not verified navigation or live conditions.",
+  "places": [
+    {"id":"SW","name":"Shaniwar Wada","categories":["heritage"],"visit_minutes_demo":45,"crowd_demo":7,"x_schematic":4,"y_schematic":6},
+    {"id":"LM","name":"Lal Mahal","categories":["heritage"],"visit_minutes_demo":30,"crowd_demo":6,"x_schematic":4.4,"y_schematic":5.9},
+    {"id":"DG","name":"Dagadusheth Halwai Ganapati Temple","categories":["temple","culture"],"visit_minutes_demo":30,"crowd_demo":9,"x_schematic":4.2,"y_schematic":5.4},
+    {"id":"PT","name":"Pataleshwar Cave Temple","categories":["heritage","temple"],"visit_minutes_demo":35,"crowd_demo":4,"x_schematic":3.5,"y_schematic":7},
+    {"id":"KM","name":"Raja Dinkar Kelkar Museum","categories":["museum","culture"],"visit_minutes_demo":60,"crowd_demo":5,"x_schematic":4,"y_schematic":4.8},
+    {"id":"SB","name":"Sarasbaug","categories":["garden","temple"],"visit_minutes_demo":40,"crowd_demo":6,"x_schematic":4,"y_schematic":3.8},
+    {"id":"PH","name":"Parvati Hill","categories":["nature","temple"],"visit_minutes_demo":60,"crowd_demo":4,"x_schematic":3.4,"y_schematic":3},
+    {"id":"PG","name":"Pu La Deshpande Udyan","categories":["garden","nature"],"visit_minutes_demo":60,"crowd_demo":3,"x_schematic":2.2,"y_schematic":2.5},
+    {"id":"AK","name":"Aga Khan Palace","categories":["heritage","museum"],"visit_minutes_demo":60,"crowd_demo":5,"x_schematic":9,"y_schematic":8},
+    {"id":"RZ","name":"Rajiv Gandhi Zoological Park, Katraj","categories":["nature","wildlife"],"visit_minutes_demo":100,"crowd_demo":6,"x_schematic":4.4,"y_schematic":0.4}
+  ],
+  "roads": [
+    {"id":"e01","u":"SW","v":"LM","directed":false,"distance_km_demo":0.4,"base_time_min_demo":4,"scenic_demo":5,"crowd_demo":7,"traffic_demo":5,"blocked":false},
+    {"id":"e02","u":"LM","v":"DG","directed":false,"distance_km_demo":0.5,"base_time_min_demo":5,"scenic_demo":4,"crowd_demo":9,"traffic_demo":7,"blocked":false},
+    {"id":"e03","u":"SW","v":"DG","directed":false,"distance_km_demo":0.8,"base_time_min_demo":6,"scenic_demo":4,"crowd_demo":8,"traffic_demo":8,"blocked":false},
+    {"id":"e04","u":"SW","v":"PT","directed":false,"distance_km_demo":1.5,"base_time_min_demo":7,"scenic_demo":6,"crowd_demo":3,"traffic_demo":2,"blocked":false},
+    {"id":"e05","u":"PT","v":"LM","directed":false,"distance_km_demo":1.8,"base_time_min_demo":8,"scenic_demo":5,"crowd_demo":4,"traffic_demo":3,"blocked":false},
+    {"id":"e06","u":"DG","v":"KM","directed":false,"distance_km_demo":1.1,"base_time_min_demo":8,"scenic_demo":4,"crowd_demo":7,"traffic_demo":7,"blocked":false},
+    {"id":"e07","u":"LM","v":"KM","directed":false,"distance_km_demo":1.5,"base_time_min_demo":9,"scenic_demo":5,"crowd_demo":6,"traffic_demo":6,"blocked":false},
+    {"id":"e08","u":"KM","v":"SB","directed":false,"distance_km_demo":1.6,"base_time_min_demo":8,"scenic_demo":6,"crowd_demo":6,"traffic_demo":5,"blocked":false},
+    {"id":"e09","u":"DG","v":"SB","directed":false,"distance_km_demo":2.5,"base_time_min_demo":13,"scenic_demo":4,"crowd_demo":8,"traffic_demo":8,"blocked":false},
+    {"id":"e10","u":"SW","v":"SB","directed":false,"distance_km_demo":3.2,"base_time_min_demo":16,"scenic_demo":4,"crowd_demo":8,"traffic_demo":9,"blocked":false},
+    {"id":"e11","u":"PT","v":"SB","directed":false,"distance_km_demo":4.2,"base_time_min_demo":12,"scenic_demo":7,"crowd_demo":3,"traffic_demo":2,"blocked":false},
+    {"id":"e12","u":"SB","v":"PH","directed":false,"distance_km_demo":1.8,"base_time_min_demo":9,"scenic_demo":8,"crowd_demo":4,"traffic_demo":4,"blocked":false},
+    {"id":"e13","u":"SB","v":"PG","directed":false,"distance_km_demo":3.6,"base_time_min_demo":13,"scenic_demo":7,"crowd_demo":4,"traffic_demo":4,"blocked":false},
+    {"id":"e14","u":"PH","v":"PG","directed":false,"distance_km_demo":2.8,"base_time_min_demo":11,"scenic_demo":9,"crowd_demo":2,"traffic_demo":2,"blocked":false},
+    {"id":"e15","u":"PT","v":"PG","directed":false,"distance_km_demo":6.4,"base_time_min_demo":21,"scenic_demo":9,"crowd_demo":2,"traffic_demo":2,"blocked":false},
+    {"id":"e16","u":"PG","v":"RZ","directed":false,"distance_km_demo":6.8,"base_time_min_demo":20,"scenic_demo":8,"crowd_demo":3,"traffic_demo":3,"blocked":false},
+    {"id":"e17","u":"SB","v":"RZ","directed":false,"distance_km_demo":6.6,"base_time_min_demo":19,"scenic_demo":5,"crowd_demo":7,"traffic_demo":7,"blocked":false},
+    {"id":"e18","u":"PH","v":"RZ","directed":false,"distance_km_demo":6.5,"base_time_min_demo":22,"scenic_demo":7,"crowd_demo":4,"traffic_demo":5,"blocked":false},
+    {"id":"e19","u":"SW","v":"AK","directed":false,"distance_km_demo":8.6,"base_time_min_demo":25,"scenic_demo":5,"crowd_demo":6,"traffic_demo":7,"blocked":false},
+    {"id":"e20","u":"PT","v":"AK","directed":false,"distance_km_demo":8.9,"base_time_min_demo":24,"scenic_demo":6,"crowd_demo":4,"traffic_demo":4,"blocked":false},
+    {"id":"e21","u":"LM","v":"AK","directed":false,"distance_km_demo":8.7,"base_time_min_demo":28,"scenic_demo":5,"crowd_demo":7,"traffic_demo":8,"blocked":false},
+    {"id":"e22","u":"AK","v":"SB","directed":false,"distance_km_demo":11.4,"base_time_min_demo":35,"scenic_demo":5,"crowd_demo":6,"traffic_demo":6,"blocked":false}
+  ]
+}
