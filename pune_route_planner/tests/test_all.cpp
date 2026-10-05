@@ -443,6 +443,25 @@ void test_tour_planner(const ds::Graph& g) {
     std::cout << "  -> PASSED" << std::endl;
 }
 
+// Adversarial directed 2-opt: boundary arcs improve while the reversed interior is unreachable.
+static void test_directed_tour() {
+    ds::Graph g;
+    for (const auto& id : {"A", "B", "C", "D"}) {
+        ds::Place p; p.id = id; p.name = id; p.visit_minutes = 0; g.add_place(p);
+    }
+    auto edge = [&](const std::string& id, const std::string& u, const std::string& v, double t) {
+        ds::Road r; r.id = id; r.u = u; r.v = v; r.directed = true;
+        r.distance_km = t; r.base_time_min = t; r.traffic = 0; g.add_road(r);
+    };
+    edge("ab", "A", "B", 1); edge("bc", "B", "C", 10); edge("cd", "C", "D", 10);
+    edge("ac", "A", "C", 2); edge("bd", "B", "D", 1);
+    planner::RouteQuery q; q.primary_mode = planner::Mode::Fastest;
+    q.start_id = "A"; q.end_id = "D"; q.must_visit.push_back("B"); q.must_visit.push_back("C");
+    std::string error; auto result = planner::Tour::plan_tour(g, q, error);
+    assert(result.found && result.stops[1].place_id == "B" && result.stops[2].place_id == "C");
+    std::cout << "  Directed 2-opt regression passed" << std::endl;
+}
+
 static void test_regressions(ds::Graph& g) {
     planner::RouteQuery q; q.start_id = "SW"; q.end_id = "SB";
     const planner::Mode modes[] = {planner::Mode::Balanced, planner::Mode::Shortest,
@@ -524,6 +543,7 @@ int main(int argc, char** argv) {
     test_dynamic_updates_undo_and_bfs(g);
     test_tour_planner(g);
     test_regressions(g);
+    test_directed_tour();
 
     std::cout << "===========================================" << std::endl;
     std::cout << "   ALL TESTS PASSED WITH 100% SUCCESS!     " << std::endl;
