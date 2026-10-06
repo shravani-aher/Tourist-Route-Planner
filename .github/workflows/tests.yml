@@ -14,7 +14,9 @@ jobs:
       - run: pip install -r pune_route_planner/tools/requirements.txt && python3 pune_route_planner/tests/test_importer.py
       - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ matrix.build }} -DENABLE_SANITIZERS=${{ matrix.sanitizers }}
       - run: cmake --build build --parallel 2
-      - run: ctest --test-dir build --output-on-failure --no-tests=error
+      - shell: bash
+        run: |
+          set +e; ctest --test-dir build --output-on-failure --no-tests=error > ctest.log 2>&1; rc=$?; cat ctest.log | tail -n 80; if [ $rc -ne 0 ]; then echo "::error title=ctest failed::$(tail -c 3500 ctest.log | sed ':a;N;$!ba;s/%/%25/g;s/\r//g;s/\n/%0A/g')"; fi; exit $rc
         env:
           ASAN_OPTIONS: detect_leaks=1:quarantine_size_mb=16
           UBSAN_OPTIONS: halt_on_error=1
@@ -43,7 +45,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: cmake -S . -B build && cmake --build build --config Release --parallel 2
-      - run: ctest --test-dir build -C Release --output-on-failure --no-tests=error -E RealData
+      - shell: bash
+        run: |
+          set +e; ctest --test-dir build -C Release -E RealData --output-on-failure --no-tests=error > ctest.log 2>&1; rc=$?; cat ctest.log | tail -n 80; if [ $rc -ne 0 ]; then echo "::error title=ctest failed::$(tail -c 3500 ctest.log | sed ':a;N;$!ba;s/%/%25/g;s/\r//g;s/\n/%0A/g')"; fi; exit $rc
   package:
     runs-on: ubuntu-latest
     needs: [cpp-http]
