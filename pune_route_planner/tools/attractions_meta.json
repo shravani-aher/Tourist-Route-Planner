@@ -1,0 +1,34 @@
+{
+ "note": "Team-curated planning estimates. Visit minutes, opening hours and crowd shapes are NOT official or live data; verify hours before travel. Edit this file and rerun enrich_metrics.py to change the catalog.",
+ "new_features": {
+  "SC": ["w", 53350109, "Shinde Chhatri"],
+  "MP": ["w", 218078554, "Mahatma Phule Vastu Sangrahalaya"],
+  "WM": ["n", 675628669, "National War Memorial Southern Command"],
+  "PM": ["n", 2081486313, "Parvati Museum"],
+  "EG": ["w", 53154871, "Empress Botanical Garden"],
+  "BG": ["w", 532470092, "Bund Garden"],
+  "NP": ["w", 214161056, "Nanasaheb Peshwe Samadhi"],
+  "BI": ["w", 232879052, "Bharat Itihas Sanshodhak Mandal"],
+  "OT": ["w", 28217451, "Osho Teerth Park"]
+ },
+ "attractions": {
+  "SW": {"category": "heritage", "visit_minutes": 75, "open": 8, "close": 18, "peak": [16, 18], "popularity": 9},
+  "LM": {"category": "heritage", "visit_minutes": 30, "open": 9, "close": 18, "peak": [11, 14], "popularity": 4},
+  "DG": {"category": "temple", "visit_minutes": 45, "open": 6, "close": 23, "peak": [18, 21], "popularity": 10},
+  "PT": {"category": "heritage", "visit_minutes": 30, "open": 8, "close": 20, "peak": [8, 10], "popularity": 4},
+  "KM": {"category": "museum", "visit_minutes": 90, "open": 10, "close": 17, "peak": [11, 14], "popularity": 6},
+  "SB": {"category": "garden", "visit_minutes": 60, "open": 6, "close": 21, "peak": [17, 20], "popularity": 7},
+  "PH": {"category": "viewpoint", "visit_minutes": 90, "open": 5, "close": 21, "peak": [6, 8], "popularity": 7},
+  "PG": {"category": "garden", "visit_minutes": 60, "open": 6, "close": 21, "peak": [17, 20], "popularity": 6},
+  "AK": {"category": "heritage", "visit_minutes": 90, "open": 9, "close": 17, "peak": [11, 15], "popularity": 8},
+  "SC": {"category": "heritage", "visit_minutes": 45, "open": 9, "close": 18, "peak": [11, 14], "popularity": 4},
+  "MP": {"category": "museum", "visit_minutes": 60, "open": 10, "close": 17, "peak": [11, 14], "popularity": 3},
+  "WM": {"category": "memorial", "visit_minutes": 40, "open": 9, "close": 17, "peak": [10, 13], "popularity": 3},
+  "PM": {"category": "museum", "visit_minutes": 40, "open": 9, "close": 17, "peak": [10, 13], "popularity": 3},
+  "EG": {"category": "garden", "visit_minutes": 60, "open": 7, "close": 18, "peak": [9, 12], "popularity": 4},
+  "BG": {"category": "garden", "visit_minutes": 60, "open": 6, "close": 20, "peak": [17, 19], "popularity": 6},
+  "NP": {"category": "heritage", "visit_minutes": 25, "open": 6, "close": 19, "peak": [10, 12], "popularity": 2},
+  "BI": {"category": "museum", "visit_minutes": 45, "open": 10, "close": 17, "peak": [11, 14], "popularity": 2},
+  "OT": {"category": "garden", "visit_minutes": 60, "open": 6, "close": 19, "peak": [7, 9], "popularity": 5}
+ }
+}

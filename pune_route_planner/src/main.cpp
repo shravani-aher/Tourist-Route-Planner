@@ -231,7 +231,7 @@ static util::JsonValue serialize_graph(const ds::Graph& graph, const planner::Dy
     root["city"] = "Pune";
     root["real_data"] = graph.real_data;
     if (graph.real_data) { root["manifest"]=dataset_metadata["manifest"]; root["attractions"]=dataset_metadata["attractions"]; }
-    root["warning"] = graph.real_data ? "Offline OSM driving graph. Estimated free-flow time; traffic, crowd, scenic and visit durations unavailable. Approach snaps and access are not field-verified. Not turn-by-turn navigation." : "Real attraction names; all numeric attributes and road corridors are synthetic classroom examples, not verified navigation or live conditions.";
+    root["warning"] = graph.real_data ? "Offline OSM driving graph. Estimated free-flow time; live traffic and live crowd unavailable. Scenic scores, crowd curves, visit durations and hours are model/curated estimates. Approach snaps and access are not field-verified. Not turn-by-turn navigation." : "Real attraction names; all numeric attributes and road corridors are synthetic classroom examples, not verified navigation or live conditions.";
     root["graph_version"] = static_cast<int64_t>(graph.version());
 
     ds::DynArray<int> comp_ids;
@@ -244,8 +244,10 @@ static util::JsonValue serialize_graph(const ds::Graph& graph, const planner::Dy
         util::JsonValue pv = util::JsonValue::object();
         pv["id"] = p.id;
         pv["name"] = p.name;
-        pv["visit_minutes"] = graph.real_data ? util::JsonValue::null() : util::JsonValue(p.visit_minutes);
-        pv["crowd"] = graph.real_data ? util::JsonValue::null() : util::JsonValue(p.crowd);
+        bool has_meta = !graph.real_data || p.metrics_estimated;
+        pv["visit_minutes"] = has_meta ? util::JsonValue(p.visit_minutes) : util::JsonValue::null();
+        pv["crowd"] = has_meta ? util::JsonValue(p.crowd) : util::JsonValue::null();
+        pv["metrics_estimated"] = p.metrics_estimated;
         pv["attraction"] = p.attraction;
         pv["x"] = p.x;
         pv["y"] = p.y;
@@ -275,7 +277,8 @@ static util::JsonValue serialize_graph(const ds::Graph& graph, const planner::Dy
         rv["distance_km"] = r->distance_km;
         rv["base_time_min"] = r->base_time_min;
         rv["effective_time_min"] = r->effective_time_min();
-        rv["scenic"] = graph.real_data ? util::JsonValue::null() : util::JsonValue(r->scenic);
+        rv["scenic"] = (graph.real_data && r->highway.empty()) ? util::JsonValue::null() : util::JsonValue(r->scenic);
+        rv["highway"] = r->highway;
         rv["crowd"] = graph.real_data ? util::JsonValue::null() : util::JsonValue(r->crowd);
         rv["traffic"] = graph.real_data ? util::JsonValue::null() : util::JsonValue(r->traffic);
         rv["osm_way"] = r->osm_way;
@@ -442,7 +445,7 @@ int main(int argc, char** argv) {
 
         util::JsonValue resp = util::JsonValue::object();
         resp["city"] = "Pune";
-        resp["warning"] = graph.real_data ? "Offline OSM driving graph. Estimated free-flow time; traffic, crowd, scenic and visit durations unavailable. Approach snaps and access are not field-verified. Not turn-by-turn navigation." : "Real attraction names; all numeric attributes and road corridors are synthetic classroom examples, not verified navigation or live conditions.";
+        resp["warning"] = graph.real_data ? "Offline OSM driving graph. Estimated free-flow time; live traffic and live crowd unavailable. Scenic scores, crowd curves, visit durations and hours are model/curated estimates. Approach snaps and access are not field-verified. Not turn-by-turn navigation." : "Real attraction names; all numeric attributes and road corridors are synthetic classroom examples, not verified navigation or live conditions.";
 
         if (!query.must_visit.empty()) {
             // Personalized Tour mode

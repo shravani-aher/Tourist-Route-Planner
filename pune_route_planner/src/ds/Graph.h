@@ -35,6 +35,10 @@ struct Place {
     DynArray<std::string> categories;
     int visit_minutes = 0;
     int crowd = 0;
+    std::string category;
+    int open_hour = 0, close_hour = 24;
+    int crowd_weekday[24] = {0}, crowd_weekend[24] = {0};
+    bool metrics_estimated = false;
     double x = 0.0;
     double y = 0.0;
     int index = -1;
@@ -63,6 +67,7 @@ struct Road {
     bool blocked = false;
     std::string osm_way;
     std::string name;
+    std::string highway;
 
     // Derived effective travel time t = base_time * (1 + traffic / 10.0)
     double effective_time_min() const {

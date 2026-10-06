@@ -14,8 +14,9 @@ inline bool load_dataset(const std::string& path, ds::Graph& graph, ds::Trie& tr
     std::stringstream b; b << f.rdbuf(); auto root=util::JsonValue::parse(b.str(), &error);
     if (!error.empty()) throw std::runtime_error(error);
     if (!root.is_object()) throw std::runtime_error("Dataset must be an object");
-    if (root["schema_version"].as_int()!=2) {
-        if (!allow_synthetic) throw std::runtime_error("Production requires schema v2 OSM data; synthetic fixtures require --test-fixture");
+    const int schema=root["schema_version"].as_int();
+    if (schema!=2 && schema!=3) {
+        if (!allow_synthetic) throw std::runtime_error("Production requires schema v2/v3 OSM data; synthetic fixtures require --test-fixture");
         return false; // legacy fixture is handled only by explicit test mode
     }
     for (const auto& key : {"places", "mock", "synthetic"}) if (root.has_key(key)) throw std::runtime_error("Synthetic/legacy fields forbidden in production schema");
@@ -38,7 +39,8 @@ inline bool load_dataset(const std::string& path, ds::Graph& graph, ds::Trie& tr
     for(const auto& n:root["roads"].as_array()) {
         for(const auto& key:{"distance_km_demo","base_time_min_demo","crowd_demo","traffic_demo","scenic_demo"}) if(n.has_key(key)) throw std::runtime_error("Synthetic road attributes forbidden");
         ds::Road r; r.id=n["id"].as_string();r.u=n["u"].as_string();r.v=n["v"].as_string();r.osm_way=n["osm_way"].as_string();r.name=n["name"].as_string();
-        r.directed=n["directed"].as_bool();r.distance_km=n["distance_km"].as_double(-1);r.base_time_min=n["base_time_min"].as_double(-1);
+        r.directed=n["directed"].as_bool();
+        if(schema==3){ if(!n["scenic"].is_number()||!std::isfinite(n["scenic"].as_double())||n["scenic"].as_double()<0||n["scenic"].as_double()>10||!n["highway"].is_string()||n["highway"].as_string().empty()) throw std::runtime_error("Schema v3 road needs scenic 0-10 and highway"); r.scenic=n["scenic"].as_double(); r.highway=n["highway"].as_string(); }r.distance_km=n["distance_km"].as_double(-1);r.base_time_min=n["base_time_min"].as_double(-1);
         if(!n["distance_km"].is_number() || !n["base_time_min"].is_number() || !n["speed_kph"].is_number() || n["speed_kph"].as_double()<=0 || n["speed_kph"].as_double()>130 || n["time_basis"].as_string().empty() || std::abs(r.base_time_min-r.distance_km/n["speed_kph"].as_double()*60)>1e-6 || r.u==r.v || r.id.empty()||r.osm_way.empty()||staged.get_road(r.id)||!n["directed"].is_bool()||!std::isfinite(r.distance_km)||!std::isfinite(r.base_time_min)||r.distance_km<=0||r.distance_km>20||r.base_time_min<=0||r.base_time_min>120||!staged.add_road(r)) throw std::runtime_error("Invalid/duplicate road or reference");
     }
     // Distances must agree with the actual segment geometry, not an arbitrary
@@ -56,6 +58,13 @@ inline bool load_dataset(const std::string& path, ds::Graph& graph, ds::Trie& tr
         std::string id=n["id"].as_string(),node=n["node_id"].as_string();int idx=staged.get_place_index(node);
         if(id.empty()||staged.has_place(id)||idx<0||!attraction_nodes.insert(node).second||n["osm_feature"].as_string().empty()||n["name"].as_string().empty()||!n["snap_distance_m"].is_number()||n["snap_distance_m"].as_double()<0||n["snap_distance_m"].as_double()>500 || !std::isfinite(n["snap_distance_m"].as_double()) || !n["lon"].is_number() || !n["lat"].is_number() || n["snap_method"].as_string().empty()) throw std::runtime_error("Invalid/ambiguous catalog snap");
         auto& p=staged.get_place(idx);p.attraction=true;p.name=n["name"].as_string();
+        if(schema==3){
+            const auto& wd=n["crowd_weekday"];const auto& we=n["crowd_weekend"];
+            if(!n["category"].is_string()||n["category"].as_string().empty()||!n["visit_minutes"].is_number()||n["visit_minutes"].as_int()<=0||n["visit_minutes"].as_int()>600||!n["open_hour"].is_number()||!n["close_hour"].is_number()||n["open_hour"].as_int()<0||n["close_hour"].as_int()>24||n["open_hour"].as_int()>=n["close_hour"].as_int()||!wd.is_array()||!we.is_array()||wd.size()!=24||we.size()!=24||!n["estimated"].is_bool()) throw std::runtime_error("Invalid v3 catalog metadata");
+            p.category=n["category"].as_string();p.categories.push_back(p.category);p.visit_minutes=n["visit_minutes"].as_int();p.open_hour=n["open_hour"].as_int();p.close_hour=n["close_hour"].as_int();p.metrics_estimated=n["estimated"].as_bool();
+            for(int h=0;h<24;++h){ double a=wd[h].as_double(-1),b=we[h].as_double(-1); if(a<0||a>10||b<0||b>10) throw std::runtime_error("Crowd curve out of range"); p.crowd_weekday[h]=(int)a;p.crowd_weekend[h]=(int)b; }
+            p.crowd=p.crowd_weekday[12];
+        }
         staged.add_alias(id,idx);staged_trie.insert(p.name,id,p.name);staged_trie.insert(id,id,p.name);
     }
     for(const auto& n:root["turn_restrictions"].as_array()) {

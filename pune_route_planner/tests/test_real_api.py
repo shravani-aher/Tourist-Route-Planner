@@ -6,9 +6,11 @@ try:
   try:
    g=json.load(urllib.request.urlopen(f'http://127.0.0.1:{port}/api/graph'));break
   except Exception:time.sleep(.1)
- assert g['real_data'] and g['manifest']['license']=='ODbL-1.0' and len(g['attractions'])==9
+ assert g['real_data'] and g['manifest']['license']=='ODbL-1.0' and len(g['attractions'])==18 and g['manifest']['estimated_metrics']
  road={r['id']:r for r in g['roads']};nodes={n['id']:n for n in g['places']}
- assert all(n['crowd'] is None and n['visit_minutes'] is None for n in g['places'])
+ assert all((n['crowd'] is None)!=n['metrics_estimated'] for n in g['places'])
+ assert all(0<=r['scenic']<=10 and r['highway'] for r in g['roads'])
+ assert all(len(a['crowd_weekday'])==24 and a['estimated'] and a['visit_minutes']>0 and a['open_hour']<a['close_hour'] for a in g['attractions'])
  def request(path,obj):return json.load(urllib.request.urlopen(urllib.request.Request(f'http://127.0.0.1:{port}'+path,json.dumps(obj).encode(),{'Content-Type':'application/json'})))
  for a,b in [('SW','SB'),('SB','SW'),('SW','AK'),('SW','PH'),('SW','PG')]:
   result=request('/api/route',{'start':a,'end':b,'mode':'shortest','k':1})['best_route']
@@ -25,7 +27,7 @@ for bad in ['missing-file.json',os.path.join(os.path.dirname(data),'../tests/fix
 print('Real graph, paths, unavailable metrics, production rejection passed')
 
 source=json.load(open(data))
-for mutate in [lambda d:d['nodes'].append(d['nodes'][0]),lambda d:d['roads'][0].update(u='unknown'),lambda d:d['roads'][0].update(distance_km=-1),lambda d:d['roads'][0].update(distance_km=1),lambda d:d['manifest'].update(source_sha256='x'*64),lambda d:d['attractions'][0].update(node_id='unknown')]:
+for mutate in [lambda d:d['nodes'].append(d['nodes'][0]),lambda d:d['roads'][0].update(u='unknown'),lambda d:d['roads'][0].update(distance_km=-1),lambda d:d['roads'][0].update(distance_km=1),lambda d:d['manifest'].update(source_sha256='x'*64),lambda d:d['attractions'][0].update(node_id='unknown'),lambda d:d['roads'][0].update(scenic=11),lambda d:d['roads'][0].pop('highway'),lambda d:d['attractions'][0].update(crowd_weekday=[1]),lambda d:d['attractions'][0].update(open_hour=20,close_hour=8)]:
  clone=json.loads(json.dumps(source));mutate(clone)
  with tempfile.NamedTemporaryFile(mode='w',suffix='.json',delete=False) as f:json.dump(clone,f);name=f.name
  try:

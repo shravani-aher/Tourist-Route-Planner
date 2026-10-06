@@ -14,9 +14,19 @@ The zoo is not included in this initial catalog.
 
 Only shortest-distance and estimated-fastest routing are available, one route per request (k=1). Hard limits are checked on that objective-optimal route, not an exhaustive constrained-path search. Travel time
 is a documented class-based free-flow model capped by parseable OSM speed limits,
-not live traffic or an arrival promise. Crowd, traffic, scenery and visit duration
-are unavailable, not zero-valued ratings. Tours are disabled pending visit durations.
+not live traffic or an arrival promise. Live traffic and live crowd are unavailable. Scenic scores (per road segment, from OSM parks, water and heritage proximity), per-attraction hourly crowd curves, visit durations and opening hours are **model/curated estimates** (schema v3), labelled as such in the data and UI, never presented as live or official. Tours are disabled pending visit durations.
 This is not turn-by-turn navigation.
+
+## Estimated metrics (schema v3)
+
+`tools/enrich_metrics.py` adds scenic scores and the 18-attraction catalog metadata from
+`tools/attractions_meta.json` to the base import. Rerun after editing the metadata:
+
+```sh
+python3 pune_route_planner/tools/enrich_metrics.py base_v2.json western.osm.pbf pune_route_planner/data/pune_driving.json
+```
+
+Hours and visit times are planning estimates, not verified with venues. See docs/models.md.
 
 ## Build and run
 
