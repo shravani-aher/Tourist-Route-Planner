@@ -57,6 +57,16 @@ try:
   try:request('/api/update',bad);raise AssertionError('should reject')
   except urllib.error.HTTPError as e:assert e.code==400
  print('dynamic update, reroute diff, undo ok')
+ import concurrent.futures as cf
+ ref=request('/api/route',{'start':'SW','end':'AK','mode':'scenic','hour':9})['best_route']['roads']
+ def one(i):return request('/api/route',{'start':'SW','end':'AK','mode':'scenic','hour':9})['best_route']['roads']
+ with cf.ThreadPoolExecutor(8) as ex:assert all(r==ref for r in ex.map(one,range(24)))
+ m=json.load(urllib.request.urlopen(f'http://127.0.0.1:{port}/api/map'));assert len(m['nodes'])==len(g['places']) and len(m['roads'])==len(g['roads'])
+ for raw,ctype,code in [(b'{',  'application/json',400),(b'[]','application/json',400),(b'{"start":1,"end":2}','application/json',400),(b'x'*70000,'application/json',413),(b'{"start":"SW","end":"SB"}','text/plain',415),(b'{"start":"SW","end":"SB"}','application/x-www-form-urlencoded',415)]:
+  try:urllib.request.urlopen(urllib.request.Request(f'http://127.0.0.1:{port}/api/route',raw,{'Content-Type':ctype}));raise AssertionError('should reject '+ctype)
+  except urllib.error.HTTPError as e:assert e.code==code,(e.code,code,raw[:10])
+ assert 'access-control-allow-origin' not in {k.lower() for k in urllib.request.urlopen(f'http://127.0.0.1:{port}/api/stats').headers}
+ print('concurrency, malformed input, content-type and CORS checks ok')
  for path,obj in [('/api/route',{'start':'SW','end':'SB','hour':24}),('/api/route',{'start':'SW','end':'SB','weekend':'x'}),('/api/simulate',{}),('/api/route',{'start':'SW','end':'SB','mode':'shortest','k':6})]:
   try:request(path,obj);raise AssertionError('Should reject')
   except urllib.error.HTTPError as e:assert e.code==400 and json.load(e)['error']

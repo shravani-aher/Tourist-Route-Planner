@@ -330,11 +330,16 @@ int main(int argc, char** argv) {
         res.set_content(error.serialize(), "application/json");
     });
 
-    // CORS headers for all responses
-    svr.set_default_headers({
-        {"Access-Control-Allow-Origin", "*"},
-        {"Access-Control-Allow-Methods", "GET, POST, OPTIONS"},
-        {"Access-Control-Allow-Headers", "Content-Type"}
+    // Same-origin only: no CORS headers. POST bodies must be JSON, which makes
+    // cross-site form/text posts fail instead of silently editing local state.
+    svr.set_pre_routing_handler([](const httplib::Request& req, httplib::Response& res) {
+        if (req.method == "POST" && req.get_header_value("Content-Type").rfind("application/json", 0) != 0) {
+            res.status = 415;
+            auto body = util::JsonValue::object(); body["error"] = "Content-Type must be application/json";
+            res.set_content(body.serialize(), "application/json");
+            return httplib::Server::HandlerResponse::Handled;
+        }
+        return httplib::Server::HandlerResponse::Unhandled;
     });
 
     svr.Options(R"(.*)", [&](const httplib::Request&, httplib::Response& res) {
@@ -347,6 +352,28 @@ int main(int argc, char** argv) {
         std::lock_guard<std::mutex> lock(state_mutex);
         util::JsonValue g_json = serialize_graph(graph, dynamic_mgr);
         res.set_content(g_json.serialize(), "application/json");
+    });
+
+    // Compact map payload for the browser (geometry only, ~4x smaller than /api/graph).
+    svr.Get("/api/map", [&](const httplib::Request&, httplib::Response& res) {
+        std::lock_guard<std::mutex> lock(state_mutex);
+        util::JsonValue root = util::JsonValue::object();
+        root["real_data"] = graph.real_data;
+        if (graph.real_data) { root["manifest"] = dataset_metadata["manifest"]; root["attractions"] = dataset_metadata["attractions"]; }
+        util::JsonValue nodes = util::JsonValue::array();
+        for (size_t i = 0; i < graph.num_places(); ++i) {
+            const auto& p = graph.get_place(static_cast<int>(i));
+            util::JsonValue n = util::JsonValue::array(); n.push_back(p.id); n.push_back(p.x); n.push_back(p.y); nodes.push_back(n);
+        }
+        root["nodes"] = nodes;
+        util::JsonValue rds = util::JsonValue::array();
+        const auto& ids = graph.all_road_ids();
+        for (size_t i = 0; i < ids.size(); ++i) {
+            const auto* r = graph.get_road(ids[i]); if (!r) continue;
+            util::JsonValue a = util::JsonValue::array(); a.push_back(r->id); a.push_back(r->u); a.push_back(r->v); a.push_back(r->name); a.push_back(r->blocked); rds.push_back(a);
+        }
+        root["roads"] = rds;
+        res.set_content(root.serialize(), "application/json");
     });
 
     // 2. GET /api/autocomplete?q=...

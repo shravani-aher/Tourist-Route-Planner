@@ -115,3 +115,7 @@ The container listens on 0.0.0.0 via `--host`. There is no authentication and ed
 ## Export and sharing
 
 The UI downloads the selected route as GPX (track plus stop waypoints) and copies a share link that restores the same query (`#s=..&e=..&m=..&t=..`). Share links encode the query, not edits.
+
+## Performance and hardening
+
+Route search runs on integer-indexed flattened arcs (no string hashing in the loop): a 5-mode request on the 32k-vertex graph takes about 0.2 s here (was 1-2 s). The browser loads `/api/map` (3.3 MB, geometry only) instead of `/api/graph` (17 MB). The server is same-origin only (no CORS headers), POST bodies must be `application/json` (415 otherwise), bodies are capped at 64 KiB, and concurrent requests are serialized by one state mutex (tested with 8 parallel clients). ThreadSanitizer and fuzzing are not set up.
