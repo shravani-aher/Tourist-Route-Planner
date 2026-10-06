@@ -38,3 +38,18 @@ jobs:
           trap 'kill "$server"' EXIT
           node pune_route_planner/tests/test_real_ui.cjs
           node pune_route_planner/tests/test_real_ui_flows.cjs
+  windows-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build && cmake --build build --config Release --parallel 2
+      - run: ctest --test-dir build -C Release --output-on-failure --no-tests=error -E RealData
+  package:
+    runs-on: ubuntu-latest
+    needs: [cpp-http]
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --parallel 2 && cmake --install build --prefix release
+      - run: tar -czf pune-route-planner-linux.tar.gz release
+      - uses: actions/upload-artifact@v4
+        with: { name: pune-route-planner-linux, path: pune-route-planner-linux.tar.gz }

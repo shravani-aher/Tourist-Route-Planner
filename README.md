@@ -1,16 +1,31 @@
 # Pune Tourist Route Planner
 
-Local C++17 driving-route coursework app, using custom adjacency lists, hash map,
-min-heap, dynamic arrays, Dijkstra, sorting, queue, stack, trie and union-find.
+A local, offline driving-route planner for tourists in central Pune. Pick a start and end
+(or tick must-visit attractions for a timed tour), choose what to optimize, and compare routes
+on a pan/zoom street map. Built in C++17 on hand-written data structures (adjacency lists, hash
+map, min-heap, dynamic arrays, queue, stack, trie, union-find) with Dijkstra, sorting and
+2-opt tour improvement. See docs/report.md for the algorithm and test write-up.
 
-## M2 offline road data
+## Quick start
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --parallel 2
+./build/pune_route_planner/pune_route_planner --data pune_route_planner/data/pune_driving.json --web pune_route_planner/web_real
+```
+
+Open http://127.0.0.1:8080. What the modes mean: **Shortest** minimizes distance; **Fastest** minimizes estimated
+free-flow time; **Most scenic** prefers streets near parks, water and heritage sites; **Least crowded** avoids
+busy roads and crowded attractions at your departure time; **Balanced** mixes all four. Scenic, crowd, visit
+time and opening hours are estimates, not live data.
+
+## Offline road and catalog data
 
 The default app uses an OSM street graph, not synthetic attraction-to-attraction
 corridors. Geographic vertices and street segments are separate from a catalog
-of nine map-sourced attractions. Each attraction routes to a mapped street vertex
+of 18 map-sourced attractions. Each attraction routes to a mapped street vertex
 near its boundary or trail approach. These are **not field-verified entrances or
 parking**, and the approach gap is shown separately and excluded from driving totals.
-The zoo is not included in this initial catalog.
+The zoo and hill forts fall outside the bounded area and are not included.
 
 All five modes (shortest, fastest, scenic, least crowded, balanced) work on the estimated metrics, with departure `hour`/`weekend` inputs. `k` (1-5) returns distinct alternatives (road overlap under 0.70) found by bounded edge-penalty reruns; they are heuristic, not exact k-shortest paths. Hard limits are checked on that objective-optimal route, not an exhaustive constrained-path search. Travel time
 is a documented class-based free-flow model capped by parseable OSM speed limits,
