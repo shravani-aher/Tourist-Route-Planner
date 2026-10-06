@@ -98,3 +98,7 @@ not a claim that GitHub CI has passed. ASan quarantine is set to 16 MiB in CI to
 navigation, exhaustive access-tag semantics, screen readers and load testing
 remain unverified. Local state is shared between clients; this is not a hosted
 multi-user service.
+
+## Live edits (blocked roads, traffic, crowd spikes)
+
+`POST /api/update` (`block`, `unblock`, `traffic`, `road_crowd`) re-plans the active route and returns a diff (roads added/removed, distance and time change); `POST /api/undo` reverts the last edit. Edits are user-entered what-ifs, not live data. State is shared by every client of one running server (single-user local app); per-session isolation is not implemented. `/api/simulate` stays disabled on the real graph.

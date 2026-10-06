@@ -44,7 +44,20 @@ try:
  print('tour',ids,[(x['arrive_min'],x['wait_min']) for x in st])
  try:request('/api/route',{'start':'SW','end':'SB','mustVisit':['AK'],'hour':17});raise AssertionError('closed stop must be rejected')
  except urllib.error.HTTPError as e:assert e.code==400 and 'close' in json.load(e)['error']
- for path,obj in [('/api/route',{'start':'SW','end':'SB','hour':24}),('/api/route',{'start':'SW','end':'SB','weekend':'x'}),('/api/simulate',{}),('/api/update',{'type':'traffic'}),('/api/route',{'start':'SW','end':'SB','mode':'shortest','k':6})]:
+ base=request('/api/route',{'start':'SW','end':'AK','mode':'fastest','hour':10})['best_route']
+ victim=base['roads'][len(base['roads'])//2]
+ upd=request('/api/update',{'type':'block','roadId':victim})
+ assert upd['success'] and victim not in upd['current_route']['roads'] and upd['diff']['roads_removed'] and 'graph_version' in upd['graph'] and 'places' not in upd['graph']
+ assert victim in upd['diff']['roads_removed']
+ undo=request('/api/undo',{})
+ assert undo['current_route']['roads']==base['roads'] and abs(undo['current_route']['total_travel_time_min']-base['total_travel_time_min'])<1e-9
+ sp=request('/api/update',{'type':'traffic','roadId':victim,'value':10});assert sp['current_route']['total_travel_time_min']>=base['total_travel_time_min']-1e-9
+ request('/api/undo',{})
+ for bad in [{'type':'place_crowd','placeId':'SW','value':5},{'type':'block','roadId':'nope'}]:
+  try:request('/api/update',bad);raise AssertionError('should reject')
+  except urllib.error.HTTPError as e:assert e.code==400
+ print('dynamic update, reroute diff, undo ok')
+ for path,obj in [('/api/route',{'start':'SW','end':'SB','hour':24}),('/api/route',{'start':'SW','end':'SB','weekend':'x'}),('/api/simulate',{}),('/api/route',{'start':'SW','end':'SB','mode':'shortest','k':6})]:
   try:request(path,obj);raise AssertionError('Should reject')
   except urllib.error.HTTPError as e:assert e.code==400 and json.load(e)['error']
 finally:p.terminate();p.wait(timeout=10)

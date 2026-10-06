@@ -522,7 +522,6 @@ int main(int argc, char** argv) {
 
     // 4. POST /api/update
     svr.Post("/api/update", [&](const httplib::Request& req, httplib::Response& res) {
-        if (graph.real_data) { json_error(res,"Manual/simulated condition mutations disabled for production data"); return; }
         std::lock_guard<std::mutex> lock(state_mutex);
         std::string err;
         util::JsonValue body = util::JsonValue::parse(req.body, &err);
@@ -534,6 +533,7 @@ int main(int argc, char** argv) {
         auto schema_error = validate_request(body, false);
         if (!schema_error.empty()) { json_error(res, schema_error); return; }
         std::string type_str = body["type"].as_string();
+        if (graph.real_data && type_str == "place_crowd") { json_error(res, "Use road_crowd on the real graph; attraction crowd comes from the curated curves"); return; }
         std::string target_id = type_str == "place_crowd" ? body["placeId"].as_string() : body["roadId"].as_string();
 
         if (target_id.empty()) {
@@ -579,7 +579,8 @@ int main(int argc, char** argv) {
         if (dynamic_mgr.has_active_query()) {
             resp["current_route"] = serialize_route(dynamic_mgr.current_route(), graph);
         }
-        resp["graph"] = serialize_graph(graph, dynamic_mgr);
+        if (graph.real_data) { util::JsonValue gs = util::JsonValue::object(); gs["graph_version"] = static_cast<int64_t>(graph.version()); resp["graph"] = gs; }
+        else resp["graph"] = serialize_graph(graph, dynamic_mgr);
 
         res.set_content(resp.serialize(), "application/json");
     });
@@ -601,7 +602,8 @@ int main(int argc, char** argv) {
         if (dynamic_mgr.has_active_query()) {
             resp["current_route"] = serialize_route(dynamic_mgr.current_route(), graph);
         }
-        resp["graph"] = serialize_graph(graph, dynamic_mgr);
+        if (graph.real_data) { util::JsonValue gs = util::JsonValue::object(); gs["graph_version"] = static_cast<int64_t>(graph.version()); resp["graph"] = gs; }
+        else resp["graph"] = serialize_graph(graph, dynamic_mgr);
 
         res.set_content(resp.serialize(), "application/json");
     });
