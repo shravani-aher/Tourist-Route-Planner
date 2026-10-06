@@ -217,7 +217,7 @@ async function applyRoadUpdate(type, roadId, val) {
 
 async function triggerUndo() {
   try {
-    const res = await fetch("/api/undo", { method: "POST" });
+    const res = await fetch("/api/undo", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
     const data = await res.json();
     if (!res.ok) {
       alert(data.error || "Undo failed");
@@ -247,7 +247,7 @@ async function triggerUndo() {
 
 async function triggerSimulationEvent() {
   try {
-    const res = await fetch("/api/simulate", { method: "POST" });
+    const res = await fetch("/api/simulate", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
     const data = await res.json();
     if (!res.ok) {
       alert(data.error || "Simulation failed");
