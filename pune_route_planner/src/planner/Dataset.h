@@ -6,6 +6,8 @@
 #include <sstream>
 #include <set>
 #include <cmath>
+#include <vector>
+#include <algorithm>
 namespace planner {
 inline bool load_dataset(const std::string& path, ds::Graph& graph, ds::Trie& trie,
                          util::JsonValue& metadata, bool allow_synthetic, std::string& error) {
@@ -73,6 +75,26 @@ inline bool load_dataset(const std::string& path, ds::Graph& graph, ds::Trie& tr
         auto* rules=staged.turns.find(via);
         if(!rules){staged.turns.insert(via,ds::DynArray<ds::Graph::Turn>());rules=staged.turns.find(via);}
         rules->push_back({n["from_way"].as_string(),n["to_way"].as_string(),n["only"].as_bool()});
+    }
+    if(schema==3){
+        staged.metrics_estimated=true;
+        struct A{double x,y;const ds::Place* p;}; std::vector<A> at;
+        for(size_t i=0;i<staged.num_places();++i){const auto& p=staged.get_place((int)i); if(p.attraction&&p.metrics_estimated) at.push_back({p.x,p.y,&p});}
+        for(const auto& id:staged.all_road_ids()){
+            auto* r=staged.get_road(id);const auto& a=staged.get_place(r->u_idx);const auto& z=staged.get_place(r->v_idx);
+            double mx=(a.x+z.x)/2,my=(a.y+z.y)/2;
+            double cls=r->highway=="motorway"||r->highway=="trunk"||r->highway=="primary"?3.0:r->highway=="secondary"?2.0:r->highway=="tertiary"?1.0:0.0;
+            for(int w=0;w<2;++w)for(int h=0;h<24;++h){
+                double f; if(w==0) f=(h>=8&&h<11)||(h>=17&&h<20)?1.0:(h>=11&&h<17)||(h>=20&&h<22)?0.5:0.2; else f=(h>=11&&h<21)?0.8:0.2;
+                double v=cls*f;
+                for(const auto& q:at){
+                    double dx=(mx-q.x)*111.32*std::cos(my*3.14159265358979323846/180)*1000,dy=(my-q.y)*110.57*1000,d=std::sqrt(dx*dx+dy*dy);
+                    if(d<400){double c=(w?q.p->crowd_weekend[h]:q.p->crowd_weekday[h])*(1-d/400);if(c>v)v=c;}
+                }
+                r->crowd_tbl[w][h]=(unsigned char)std::lround(std::min(10.0,v));
+            }
+            r->has_crowd_tbl=true;
+        }
     }
     graph=std::move(staged);trie=std::move(staged_trie);metadata=root;return true;
  } catch(const std::exception& ex) {error=ex.what();return false;}

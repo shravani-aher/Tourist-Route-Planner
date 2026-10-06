@@ -14,11 +14,20 @@ try:
  def request(path,obj):return json.load(urllib.request.urlopen(urllib.request.Request(f'http://127.0.0.1:{port}'+path,json.dumps(obj).encode(),{'Content-Type':'application/json'})))
  for a,b in [('SW','SB'),('SB','SW'),('SW','AK'),('SW','PH'),('SW','PG')]:
   result=request('/api/route',{'start':a,'end':b,'mode':'shortest','k':1})['best_route']
-  assert result['found'] and result['avg_crowd'] is None and result['avg_scenic'] is None and result['demo_index'] is None
+  assert result['found'] and result['avg_crowd'] is not None and result['avg_scenic'] is not None and result['demo_index'] is not None
   assert abs(sum(road[x]['distance_km'] for x in result['roads'])-result['total_distance_km'])<1e-7
   for leg in result['legs']:
    r=road[leg['road_id']];assert (r['u'],r['v'])==(leg['from_id'],leg['to_id']) or not r['directed'] and (r['v'],r['u'])==(leg['from_id'],leg['to_id'])
- for path,obj in [('/api/route',{'start':'SW','end':'SB','mode':'scenic'}),('/api/simulate',{}),('/api/update',{'type':'traffic'}),('/api/route',{'start':'SW','end':'SB','mode':'shortest','k':2})]:
+ modes=request('/api/route',{'start':'SW','end':'AK','mode':'balanced','hour':18,'weekend':True})['mode_routes']
+ assert set(modes)=={'balanced','shortest','fastest','scenic','least_crowded'} and all(m['found'] for m in modes.values())
+ assert modes['shortest']['total_distance_km']<=min(m['total_distance_km'] for m in modes.values())+1e-9
+ assert modes['fastest']['total_travel_time_min']<=min(m['total_travel_time_min'] for m in modes.values())+1e-9
+ assert modes['scenic']['avg_scenic']>=modes['shortest']['avg_scenic']-1e-9
+ assert modes['least_crowded']['avg_crowd']<=modes['fastest']['avg_crowd']+1e-9
+ night=request('/api/route',{'start':'SW','end':'AK','mode':'least_crowded','hour':3})['best_route']
+ assert night['avg_crowd']<=modes['least_crowded']['avg_crowd']
+ print({k:(round(v['total_distance_km'],2),round(v['total_travel_time_min'],1),round(v['avg_scenic'],2),round(v['avg_crowd'],2)) for k,v in modes.items()})
+ for path,obj in [('/api/route',{'start':'SW','end':'SB','hour':24}),('/api/route',{'start':'SW','end':'SB','weekend':'x'}),('/api/simulate',{}),('/api/update',{'type':'traffic'}),('/api/route',{'start':'SW','end':'SB','mode':'shortest','k':2})]:
   try:request(path,obj);raise AssertionError('Should reject')
   except urllib.error.HTTPError as e:assert e.code==400 and json.load(e)['error']
 finally:p.terminate();p.wait(timeout=10)

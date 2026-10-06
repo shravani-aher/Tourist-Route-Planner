@@ -7,3 +7,7 @@ Nothing here is live or official. Every value is flagged `estimated` in the data
 **Crowd (attraction, hour, 0-10).** Zero outside opening hours. Inside: base = 0.35 x popularity, rising to popularity inside the peak window and falling linearly over 4 hours either side. Weekend = weekday x 1.3, capped at 10.
 
 **Visit minutes, opening hours, popularity, peak window.** Hand-entered in tools/attractions_meta.json. Verify with venues before relying on them.
+
+**Road crowd (segment, hour, weekday/weekend, 0-10).** Computed at load. Max of: (a) road-class congestion (primary/trunk/motorway 3, secondary 2, tertiary 1, else 0) x a time factor (weekday: 1.0 at 08-11 and 17-20, 0.5 at 11-17 and 20-22, 0.2 otherwise; weekend: 0.8 at 11-21, else 0.2); (b) for each attraction within 400 m of the segment midpoint, its hourly curve value x (1 - distance/400). Departure time comes from the request (`hour` 0-23, `weekend` true/false; default 12, weekday).
+
+**Routing modes (real data).** Shortest = distance. Fastest = estimated free-flow time. Scenic = distance x (1.1 - scenic/10). Least crowded = time x (0.1 + crowd/10). Balanced = weighted mix of distance, time, scenic loss and crowd (weights from the request, normalised). `/api/route` returns the requested mode plus `mode_routes` with all five.

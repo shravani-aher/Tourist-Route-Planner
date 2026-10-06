@@ -21,6 +21,7 @@ static bool test_fixture=false;
 #include "planner/Tour.h"
 #include "planner/Solve.h"
 #include "planner/Dynamic.h"
+#include "planner/TimeContext.h"
 #include "util/Json.h"
 
 static void json_error(httplib::Response& res, const std::string& message) {
@@ -141,12 +142,12 @@ static util::JsonValue serialize_route(const planner::RouteResult& r, const ds::
     obj["mode_label"] = r.mode_label;
     obj["total_distance_km"] = r.total_distance_km;
     obj["total_travel_time_min"] = r.total_travel_time_min;
-    obj["total_visit_time_min"] = graph.real_data ? util::JsonValue::null() : util::JsonValue(r.total_visit_time_min);
+    obj["total_visit_time_min"] = (graph.real_data && !graph.metrics_estimated) ? util::JsonValue::null() : util::JsonValue(r.total_visit_time_min);
     obj["total_time_min"] = r.total_time_min;
-    obj["avg_scenic"] = graph.real_data ? util::JsonValue::null() : util::JsonValue(r.avg_scenic);
-    obj["avg_crowd"] = graph.real_data ? util::JsonValue::null() : util::JsonValue(r.avg_crowd);
+    obj["avg_scenic"] = (graph.real_data && !graph.metrics_estimated) ? util::JsonValue::null() : util::JsonValue(r.avg_scenic);
+    obj["avg_crowd"] = (graph.real_data && !graph.metrics_estimated) ? util::JsonValue::null() : util::JsonValue(r.avg_crowd);
     obj["balanced_cost"] = r.balanced_cost;
-    obj["demo_index"] = graph.real_data ? util::JsonValue::null() : util::JsonValue(r.demo_index);
+    obj["demo_index"] = (graph.real_data && !graph.metrics_estimated) ? util::JsonValue::null() : util::JsonValue(r.demo_index);
 
     util::JsonValue nodes_arr = util::JsonValue::array();
     for (size_t i = 0; i < r.node_path.size(); ++i) {
@@ -176,8 +177,8 @@ static util::JsonValue serialize_route(const planner::RouteResult& r, const ds::
         l["to_id"] = leg.to_id;
         l["distance_km"] = leg.distance_km;
         l["travel_time_min"] = leg.travel_time_min;
-        l["scenic"] = graph.real_data ? util::JsonValue::null() : util::JsonValue(leg.scenic);
-        l["crowd"] = graph.real_data ? util::JsonValue::null() : util::JsonValue(leg.crowd);
+        l["scenic"] = (graph.real_data && !graph.metrics_estimated) ? util::JsonValue::null() : util::JsonValue(leg.scenic);
+        l["crowd"] = (graph.real_data && !graph.metrics_estimated) ? util::JsonValue::null() : util::JsonValue(leg.crowd);
         l["traffic"] = graph.real_data ? util::JsonValue::null() : util::JsonValue(leg.traffic);
         legs_arr.push_back(l);
     }
@@ -279,7 +280,7 @@ static util::JsonValue serialize_graph(const ds::Graph& graph, const planner::Dy
         rv["effective_time_min"] = r->effective_time_min();
         rv["scenic"] = (graph.real_data && r->highway.empty()) ? util::JsonValue::null() : util::JsonValue(r->scenic);
         rv["highway"] = r->highway;
-        rv["crowd"] = graph.real_data ? util::JsonValue::null() : util::JsonValue(r->crowd);
+        rv["crowd"] = (graph.real_data && !graph.metrics_estimated) ? util::JsonValue::null() : util::JsonValue(r->crowd);
         rv["traffic"] = graph.real_data ? util::JsonValue::null() : util::JsonValue(r->traffic);
         rv["osm_way"] = r->osm_way;
         rv["name"] = r->name;
@@ -391,8 +392,17 @@ int main(int argc, char** argv) {
         query.start_id = start_id;
         query.end_id = end_id;
         query.primary_mode = planner::string_to_mode(body["mode"].as_string_or("balanced"));
+        if (body.has_key("hour")) {
+            double h = body["hour"].as_double(-1);
+            if (!body["hour"].is_number() || h < 0 || h > 23 || std::floor(h) != h) { json_error(res, "hour must be an integer 0-23"); return; }
+            planner::time_context().hour = (int)h;
+        } else planner::time_context().hour = 12;
+        if (body.has_key("weekend")) {
+            if (!body["weekend"].is_bool()) { json_error(res, "weekend must be true or false"); return; }
+            planner::time_context().weekend = body["weekend"].as_bool();
+        } else planner::time_context().weekend = false;
         if (graph.real_data) {
-            if (query.primary_mode != planner::Mode::Shortest && query.primary_mode != planner::Mode::Fastest) {
+            if (!graph.metrics_estimated && query.primary_mode != planner::Mode::Shortest && query.primary_mode != planner::Mode::Fastest) {
                 json_error(res, "Only shortest and estimated-fastest are available without verified condition metrics"); return;
             }
             if (body["mustVisit"].size() || body["interests"].size() || body["avoid"].size()) {
@@ -416,7 +426,7 @@ int main(int argc, char** argv) {
         }
 
         std::string weight_err;
-        if (graph.real_data) { query.weights.wd=.5;query.weights.wt=.5;query.weights.ws=0;query.weights.wc=0;query.weights.wp=0; }
+        if (graph.real_data && !graph.metrics_estimated) { query.weights.wd=.5;query.weights.wt=.5;query.weights.ws=0;query.weights.wc=0;query.weights.wp=0; }
         if (!query.weights.validate_and_normalize(weight_err)) {
             json_error(res, weight_err);
             return;
@@ -493,7 +503,7 @@ int main(int argc, char** argv) {
                 planner::Mode::LeastCrowded
             };
             for (auto m : comparison_modes) {
-                if (graph.real_data && m != planner::Mode::Shortest && m != planner::Mode::Fastest) continue;
+                if (graph.real_data && !graph.metrics_estimated && m != planner::Mode::Shortest && m != planner::Mode::Fastest) continue;
                 planner::Dijkstra::Options m_opts;
                 m_opts.mode = m;
                 m_opts.weights = query.weights;

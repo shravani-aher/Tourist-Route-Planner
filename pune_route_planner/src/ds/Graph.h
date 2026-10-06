@@ -68,6 +68,8 @@ struct Road {
     std::string osm_way;
     std::string name;
     std::string highway;
+    unsigned char crowd_tbl[2][24] = {{0}};
+    bool has_crowd_tbl = false;
 
     // Derived effective travel time t = base_time * (1 + traffic / 10.0)
     double effective_time_min() const {
@@ -92,6 +94,7 @@ private:
 public:
     Graph() = default;
     bool real_data = false;
+    bool metrics_estimated = false;
     struct Turn { std::string from_way, to_way; bool only; };
     HashMap<std::string, DynArray<Turn>> turns;
     bool turn_allowed(int via, const std::string& from, const std::string& to) const {

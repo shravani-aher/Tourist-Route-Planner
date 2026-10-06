@@ -1,4 +1,5 @@
 #include "Scoring.h"
+#include "TimeContext.h"
 #include <algorithm>
 #include <cmath>
 
@@ -25,7 +26,7 @@ double Scoring::compute_balanced_cost(
     double d = road.distance_km;
     double t = road.effective_time_min();
     double scenic_quality = road.scenic / 10.0;
-    double crowd = road.crowd / 10.0;
+    double crowd = road_crowd(road) / 10.0;
     double mismatch = calculate_mismatch(target_place, interests);
 
     // balanced = wd*(d/10) + wt*(t/30) + ws*(d/10)*(1-scenic_quality) + wc*(t/30)*crowd + wp*(d/10)*mismatch
@@ -49,7 +50,7 @@ double Scoring::compute_edge_cost(
     double d = road.distance_km;
     double t = road.effective_time_min();
     double scenic_quality = road.scenic / 10.0;
-    double crowd = road.crowd / 10.0;
+    double crowd = road_crowd(road) / 10.0;
 
     double base_cost = 0.0;
     switch (mode) {

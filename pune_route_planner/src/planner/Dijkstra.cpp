@@ -1,5 +1,6 @@
 #include "Dijkstra.h"
 #include "Scoring.h"
+#include "TimeContext.h"
 #include <limits>
 #include <cmath>
 #include <algorithm>
@@ -104,14 +105,14 @@ RouteResult Dijkstra::find_path(
         leg.distance_km = r->distance_km;
         leg.travel_time_min = r->effective_time_min();
         leg.scenic = r->scenic;
-        leg.crowd = r->crowd;
+        leg.crowd = road_crowd(*r);
         leg.traffic = r->traffic;
         result.legs.push_back(leg);
 
         result.total_distance_km += r->distance_km;
         result.total_travel_time_min += r->effective_time_min();
         total_scenic_weighted += r->scenic * r->distance_km;
-        total_crowd_weighted += r->crowd * r->effective_time_min();
+        total_crowd_weighted += road_crowd(*r) * r->effective_time_min();
 
         const auto& v_place = graph.get_place(v_node);
         result.balanced_cost += Scoring::compute_balanced_cost(
