@@ -298,6 +298,7 @@ int main(int argc, char** argv) {
     std::string data_path = "data/pune_driving.json";
     std::string web_dir = "web_real";
     int port = 8080;
+    std::string host = "127.0.0.1";
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -305,6 +306,7 @@ int main(int argc, char** argv) {
         else if (arg == "--data" && i + 1 < argc) data_path = argv[++i];
         else if (arg == "--web" && i + 1 < argc) web_dir = argv[++i];
         else if (arg == "--port" && i + 1 < argc) port = std::stoi(argv[++i]);
+        else if (arg == "--host" && i + 1 < argc) host = argv[++i];
     }
 
     ds::Graph graph;
@@ -654,12 +656,12 @@ int main(int argc, char** argv) {
     svr.set_mount_point("/", web_dir.c_str());
 
     std::cout << "==========================================================" << std::endl;
-    std::cout << "  Pune Tourist Route Planner Server running on http://127.0.0.1:" << port << std::endl;
-    std::cout << "  Open your browser to: http://127.0.0.1:" << port << std::endl;
+    std::cout << "  Pune Tourist Route Planner Server running on http://" << host << ":" << port << std::endl;
+    std::cout << "  Open your browser to: http://" << host << ":" << port << std::endl;
     std::cout << "==========================================================" << std::endl;
 
-    if (!svr.listen("127.0.0.1", port)) {
-        std::cerr << "Failed to bind to 127.0.0.1:" << port << std::endl;
+    if (!svr.listen(host.c_str(), port)) {
+        std::cerr << "Failed to bind to " << host << ":" << port << std::endl;
         return 1;
     }
 

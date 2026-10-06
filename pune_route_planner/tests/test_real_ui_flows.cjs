@@ -25,4 +25,9 @@ await page.mouse.click(pt.x,pt.y);await page.waitForFunction(()=>!document.query
 if(!/Blocked/.test(await page.locator('#edit').innerText()))throw Error('block message missing');
 await page.click('#undo');await page.waitForFunction(()=>document.querySelector('#undo').disabled,{},{timeout:90000});
 if(await page.locator('#summary').innerText()!==before)throw Error('undo did not restore the route summary');
+const [dl]=await Promise.all([page.waitForEvent('download'),page.click('#gpx')]);const fs=require('fs');const gx=fs.readFileSync(await dl.path(),'utf8');
+if(!gx.startsWith('<?xml')||(gx.match(/<trkpt /g)||[]).length<10||!/<name>/.test(gx))throw Error('GPX invalid');
+const link=await page.evaluate(()=>{shareUrl();return shareUrl();});const p2=await b.newPage({viewport:{width:1280,height:900}});await p2.goto(link);
+await p2.waitForFunction(()=>document.querySelector('#status').textContent==='Route found',{},{timeout:90000});
+if(await p2.locator('#mode').inputValue()!=='fastest'||await p2.locator('#summary').innerText()!==before)throw Error('share link did not reproduce the route');
 if(errors.length)throw Error(errors.join('\n'));await b.close();console.log('UI flows passed');})().catch(e=>{console.error(e);process.exit(1)});

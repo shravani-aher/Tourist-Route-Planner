@@ -102,3 +102,16 @@ multi-user service.
 ## Live edits (blocked roads, traffic, crowd spikes)
 
 `POST /api/update` (`block`, `unblock`, `traffic`, `road_crowd`) re-plans the active route and returns a diff (roads added/removed, distance and time change); `POST /api/undo` reverts the last edit. Edits are user-entered what-ifs, not live data. State is shared by every client of one running server (single-user local app); per-session isolation is not implemented. `/api/simulate` stays disabled on the real graph.
+
+## Docker
+
+```sh
+docker build -t pune-planner .
+docker run --rm -p 8080:8080 pune-planner
+```
+
+The container listens on 0.0.0.0 via `--host`. There is no authentication and edit state is shared, so do not expose it publicly. (Dockerfile not built in CI yet.)
+
+## Export and sharing
+
+The UI downloads the selected route as GPX (track plus stop waypoints) and copies a share link that restores the same query (`#s=..&e=..&m=..&t=..`). Share links encode the query, not edits.
