@@ -14,7 +14,7 @@ The zoo is not included in this initial catalog.
 
 All five modes (shortest, fastest, scenic, least crowded, balanced) work on the estimated metrics, with departure `hour`/`weekend` inputs. `k` (1-5) returns distinct alternatives (road overlap under 0.70) found by bounded edge-penalty reruns; they are heuristic, not exact k-shortest paths. Hard limits are checked on that objective-optimal route, not an exhaustive constrained-path search. Travel time
 is a documented class-based free-flow model capped by parseable OSM speed limits,
-not live traffic or an arrival promise. Live traffic and live crowd are unavailable. Scenic scores (per road segment, from OSM parks, water and heritage proximity), per-attraction hourly crowd curves, visit durations and opening hours are **model/curated estimates** (schema v3), labelled as such in the data and UI, never presented as live or official. Tours are disabled pending visit durations.
+not live traffic or an arrival promise. Live traffic and live crowd are unavailable. Scenic scores (per road segment, from OSM parks, water and heritage proximity), per-attraction hourly crowd curves, visit durations and opening hours are **model/curated estimates** (schema v3), labelled as such in the data and UI, never presented as live or official. Tours (`mustVisit`, optional `maxTimeMin` to add extra attractions) are scheduled from the departure `hour`: each stop gets arrival/departure times, waits for estimated opening hours, and the request is rejected if a mandatory stop would be closed. Visit times and hours are estimates.
 This is not turn-by-turn navigation.
 
 ## Estimated metrics (schema v3)

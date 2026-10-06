@@ -35,6 +35,15 @@ try:
   for j in range(i):assert len(sets[i]&sets[j])/len(sets[i]|sets[j])<.7
  assert len({tuple(r['roads']) for r in rr})==len(rr)
  print('alternatives',len(rr),[round(r['total_travel_time_min'],1) for r in rr])
+ tour=request('/api/route',{'start':'SW','end':'SB','mustVisit':['AK','KM'],'hour':9})
+ assert tour['is_tour'];t=tour['best_route'];st=t['stops']
+ nid={a['id']:a['node_id'] for a in g['attractions']};ids=[x['place_id'] for x in st];assert ids[0]==nid['SW'] and ids[-1]==nid['SB'] and {nid['AK'],nid['KM']}<=set(ids)
+ for a,b in zip(st,st[1:]):assert b['arrive_min']>=a['depart_min']
+ for x in st[1:-1]:assert x['arrive_min']+x['wait_min']>=0 and x['visit_minutes']>0
+ assert abs(t['total_time_min']-(t['total_travel_time_min']+t['total_visit_time_min']))<1e-6
+ print('tour',ids,[(x['arrive_min'],x['wait_min']) for x in st])
+ try:request('/api/route',{'start':'SW','end':'SB','mustVisit':['AK'],'hour':17});raise AssertionError('closed stop must be rejected')
+ except urllib.error.HTTPError as e:assert e.code==400 and 'close' in json.load(e)['error']
  for path,obj in [('/api/route',{'start':'SW','end':'SB','hour':24}),('/api/route',{'start':'SW','end':'SB','weekend':'x'}),('/api/simulate',{}),('/api/update',{'type':'traffic'}),('/api/route',{'start':'SW','end':'SB','mode':'shortest','k':6})]:
   try:request(path,obj);raise AssertionError('Should reject')
   except urllib.error.HTTPError as e:assert e.code==400 and json.load(e)['error']

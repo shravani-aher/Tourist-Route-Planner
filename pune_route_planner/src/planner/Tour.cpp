@@ -1,22 +1,61 @@
 #include "Tour.h"
 #include "Dijkstra.h"
 #include "Scoring.h"
+#include "TimeContext.h"
+#include <map>
 #include "../ds/Sort.h"
 #include <algorithm>
 #include <cmath>
 
 namespace planner {
 
+struct LegInfo { bool found = false; double time = 0, dist = 0; };
+static std::map<std::pair<int,int>, LegInfo>& leg_cache() { static thread_local std::map<std::pair<int,int>, LegInfo> c; return c; }
+static const LegInfo& get_leg(const ds::Graph& graph, int u, int v, const RouteQuery& query) {
+    auto key = std::make_pair(u, v); auto& c = leg_cache(); auto it = c.find(key);
+    if (it != c.end()) return it->second;
+    LegInfo info;
+    if (u == v) { info.found = true; }
+    else {
+        Dijkstra::Options opts; opts.mode = query.primary_mode; opts.weights = query.weights; opts.interests = query.interests;
+        auto r = Dijkstra::find_path(graph, u, v, opts);
+        info.found = r.found; info.time = r.total_travel_time_min; info.dist = r.total_distance_km;
+    }
+    return c.emplace(key, info).first->second;
+}
+// Walks the itinerary from the departure time. Fills stop timings; false (with reason) if a stop is closed on arrival.
+static bool schedule_tour(const ds::Graph& graph, const ds::DynArray<int>& tour, const RouteQuery& query,
+                          ds::DynArray<PlannedStop>* out, std::string* why) {
+    double now = time_context().hour * 60.0;
+    for (size_t i = 0; i < tour.size(); ++i) {
+        if (i > 0) { const auto& l = get_leg(graph, tour[i-1], tour[i], query); if (!l.found) { if (why) *why = "unreachable leg"; return false; } now += l.time; }
+        const auto& p = graph.get_place(tour[i]);
+        bool visited = i > 0 && i + 1 < tour.size();
+        PlannedStop st; st.place_id = p.id; st.name = p.name; st.is_start = i == 0; st.is_end = i + 1 == tour.size();
+        st.arrive_min = (int)std::lround(now);
+        if (visited) {
+            int arrive = (int)std::lround(now);
+            if (p.metrics_estimated) {
+                int open = p.open_hour * 60, close = p.close_hour * 60;
+                if (arrive < open) { st.wait_min = open - arrive; now = open; }
+                if (now + p.visit_minutes > close + 1e-6) { if (why) *why = p.name + " would close (" + std::to_string(p.close_hour) + ":00, estimated hours) before the visit ends if you arrive at " + std::to_string(arrive / 60) + ":" + (arrive % 60 < 10 ? "0" : "") + std::to_string(arrive % 60); return false; }
+                int h = std::min(23, (int)(now / 60)); st.crowd_at_arrival = time_context().weekend ? p.crowd_weekend[h] : p.crowd_weekday[h];
+            }
+            st.visit_minutes = p.visit_minutes; now += p.visit_minutes;
+        }
+        st.depart_min = (int)std::lround(now);
+        if (out) out->push_back(st);
+    }
+    return true;
+}
 // Evaluate every directed leg, including reversed interior arcs after 2-opt.
 static bool measure_tour(const ds::Graph& graph, const ds::DynArray<int>& tour,
                          const RouteQuery& query, double& time, double& distance) {
     time = distance = 0.0;
-    Dijkstra::Options opts;
-    opts.mode = query.primary_mode; opts.weights = query.weights; opts.interests = query.interests;
     for (size_t i = 0; i + 1 < tour.size(); ++i) {
-        auto leg = Dijkstra::find_path(graph, tour[i], tour[i + 1], opts);
+        const auto& leg = get_leg(graph, tour[i], tour[i + 1], query);
         if (!leg.found) return false;
-        time += leg.total_travel_time_min; distance += leg.total_distance_km;
+        time += leg.time; distance += leg.dist;
     }
     for (size_t i = 1; i + 1 < tour.size(); ++i) time += graph.get_place(tour[i]).visit_minutes;
     return true;
@@ -33,13 +72,8 @@ double Tour::calculate_leg_travel_time(
     const RouteQuery& query
 ) {
     if (u == v) return 0.0;
-    Dijkstra::Options opts;
-    opts.mode = query.primary_mode;
-    opts.weights = query.weights;
-    opts.interests = query.interests;
-    RouteResult r = Dijkstra::find_path(graph, u, v, opts);
-    if (!r.found) return 1e9;
-    return r.total_travel_time_min;
+    const auto& l = get_leg(graph, u, v, query);
+    return l.found ? l.time : 1e9;
 }
 
 ds::DynArray<int> Tour::nearest_neighbor_order(
@@ -134,6 +168,7 @@ RouteResult Tour::plan_tour(
 ) {
     RouteResult final_route;
     error_msg.clear();
+    leg_cache().clear();
     final_route.mode_label = "personalized_tour";
 
     int start_idx = graph.get_place_index(query.start_id);
@@ -199,6 +234,7 @@ RouteResult Tour::plan_tour(
         error_msg = "Mandatory tour exceeds time or distance limit for the selected mode";
         final_route.message = error_msg; return final_route;
     }
+    if (graph.real_data) { std::string why; if (!schedule_tour(graph, current_tour, query, nullptr, &why)) { error_msg = "Mandatory stop not feasible at this departure time: " + why; final_route.message = error_msg; return final_route; } }
     // Optional visits are inserted only if the entire selected-mode itinerary fits.
     if (query.max_time_min > 0.0) {
         struct OptionalCandidate {
@@ -221,6 +257,7 @@ RouteResult Tour::plan_tour(
             if (in_tour) continue;
 
             const ds::Place& p = graph.get_place(idx);
+            if (graph.real_data && (!p.attraction || p.visit_minutes <= 0)) continue;
 
             // Exclude avoided categories (Avoided categories exclude optional visits, not transit)
             bool is_avoided = false;
@@ -255,6 +292,7 @@ RouteResult Tour::plan_tour(
             return a.ratio > b.ratio; // descending
         });
 
+        if (optional_pool.size() > 6) { ds::DynArray<OptionalCandidate> top; for (size_t c = 0; c < 6; ++c) top.push_back(optional_pool[c]); optional_pool = std::move(top); }
         // Greedy insertion of candidates into tour at position minimizing travel time increase
         for (size_t c = 0; c < optional_pool.size(); ++c) {
             int cand_idx = optional_pool[c].node_idx;
@@ -268,7 +306,8 @@ RouteResult Tour::plan_tour(
                 }
                 double time, distance;
                 if (measure_tour(graph, candidate, query, time, distance) &&
-                    within_limits(time, distance, query) && time < best_time) {
+                    within_limits(time, distance, query) && time < best_time &&
+                    schedule_tour(graph, candidate, query, nullptr, nullptr)) {
                     best_time = time; best_distance = distance; best_tour = std::move(candidate);
                 }
             }
@@ -340,6 +379,16 @@ RouteResult Tour::plan_tour(
     int last_idx = current_tour.back();
     const auto& last_p = graph.get_place(last_idx);
     final_route.stops.push_back(PlannedStop{last_p.id, last_p.name, 0, false, false, true});
+    if (graph.real_data) {
+        ds::DynArray<PlannedStop> timed; std::string why;
+        if (schedule_tour(graph, current_tour, query, &timed, &why)) {
+            for (size_t i = 0; i < final_route.stops.size() && i < timed.size(); ++i) {
+                final_route.stops[i].arrive_min = timed[i].arrive_min; final_route.stops[i].depart_min = timed[i].depart_min;
+                final_route.stops[i].wait_min = timed[i].wait_min; final_route.stops[i].crowd_at_arrival = timed[i].crowd_at_arrival;
+                final_route.total_visit_time_min += timed[i].wait_min;
+            }
+        }
+    }
 
     if (final_route.total_distance_km > 0.0) {
         final_route.avg_scenic = total_scenic_weighted / final_route.total_distance_km;

@@ -190,7 +190,9 @@ static util::JsonValue serialize_route(const planner::RouteResult& r, const ds::
         util::JsonValue s = util::JsonValue::object();
         s["place_id"] = st.place_id;
         s["name"] = st.name;
-        s["visit_minutes"] = graph.real_data ? util::JsonValue::null() : util::JsonValue(st.visit_minutes);
+        s["visit_minutes"] = (graph.real_data && !graph.metrics_estimated) ? util::JsonValue::null() : util::JsonValue(st.visit_minutes);
+        if (st.arrive_min >= 0) { s["arrive_min"] = st.arrive_min; s["depart_min"] = st.depart_min; s["wait_min"] = st.wait_min; }
+        if (st.crowd_at_arrival >= 0) s["crowd_at_arrival"] = st.crowd_at_arrival;
         s["is_must_visit"] = st.is_must_visit;
         s["is_start"] = st.is_start;
         s["is_end"] = st.is_end;
@@ -405,7 +407,7 @@ int main(int argc, char** argv) {
             if (!graph.metrics_estimated && query.primary_mode != planner::Mode::Shortest && query.primary_mode != planner::Mode::Fastest) {
                 json_error(res, "Only shortest and estimated-fastest are available without verified condition metrics"); return;
             }
-            if (body["mustVisit"].size() || body["interests"].size() || body["avoid"].size()) {
+            if (!graph.metrics_estimated && (body["mustVisit"].size() || body["interests"].size() || body["avoid"].size())) {
                 json_error(res, "Tours and interest scoring unavailable until verified visit durations/catalog metadata are supplied"); return;
             }
         }

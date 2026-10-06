@@ -77,6 +77,10 @@ struct PlannedStop {
     bool is_must_visit = false;
     bool is_start = false;
     bool is_end = false;
+    int arrive_min = -1;   // minutes after midnight, -1 when not scheduled
+    int wait_min = 0;      // wait for opening
+    int depart_min = -1;
+    int crowd_at_arrival = -1; // 0-10 estimate, -1 unknown
 };
 
 struct RouteResult {
