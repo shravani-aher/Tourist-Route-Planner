@@ -27,7 +27,15 @@ try:
  night=request('/api/route',{'start':'SW','end':'AK','mode':'least_crowded','hour':3})['best_route']
  assert night['avg_crowd']<=modes['least_crowded']['avg_crowd']
  print({k:(round(v['total_distance_km'],2),round(v['total_travel_time_min'],1),round(v['avg_scenic'],2),round(v['avg_crowd'],2)) for k,v in modes.items()})
- for path,obj in [('/api/route',{'start':'SW','end':'SB','hour':24}),('/api/route',{'start':'SW','end':'SB','weekend':'x'}),('/api/simulate',{}),('/api/update',{'type':'traffic'}),('/api/route',{'start':'SW','end':'SB','mode':'shortest','k':2})]:
+ alt=request('/api/route',{'start':'SW','end':'AK','mode':'fastest','k':3})
+ rr=alt['ranked_routes'];assert 1<=len(rr)<=3 and rr[0]['found']
+ assert rr[0]['total_travel_time_min']<=min(r['total_travel_time_min'] for r in rr)+1e-9
+ sets=[set(r['roads']) for r in rr]
+ for i in range(len(sets)):
+  for j in range(i):assert len(sets[i]&sets[j])/len(sets[i]|sets[j])<.7
+ assert len({tuple(r['roads']) for r in rr})==len(rr)
+ print('alternatives',len(rr),[round(r['total_travel_time_min'],1) for r in rr])
+ for path,obj in [('/api/route',{'start':'SW','end':'SB','hour':24}),('/api/route',{'start':'SW','end':'SB','weekend':'x'}),('/api/simulate',{}),('/api/update',{'type':'traffic'}),('/api/route',{'start':'SW','end':'SB','mode':'shortest','k':6})]:
   try:request(path,obj);raise AssertionError('Should reject')
   except urllib.error.HTTPError as e:assert e.code==400 and json.load(e)['error']
 finally:p.terminate();p.wait(timeout=10)

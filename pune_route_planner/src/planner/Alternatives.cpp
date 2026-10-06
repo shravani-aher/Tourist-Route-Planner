@@ -5,6 +5,7 @@
 #include "../ds/HashMap.h"
 #include <string>
 #include <cmath>
+#include <algorithm>
 #include <unordered_set>
 
 namespace planner {
@@ -46,7 +47,7 @@ ds::DynArray<RouteResult> Alternatives::generate_ranked_alternatives(
     const RouteQuery& query
 ) {
     ds::DynArray<RouteResult> candidates;
-    if (graph.real_data && query.k_alternatives == 1) {
+    if (graph.real_data && query.k_alternatives == 1) { // exact single-route fast path
         Dijkstra::Options o;o.mode=query.primary_mode;o.weights=query.weights;o.interests=query.interests;
         auto r=Dijkstra::find_path(graph,start_idx,end_idx,o);
         if(query.max_detour_ratio>0 && r.found) {
@@ -74,7 +75,7 @@ ds::DynArray<RouteResult> Alternatives::generate_ranked_alternatives(
     double shortest_dist = -1.0;
 
     for (Mode m : all_modes) {
-        if (graph.real_data && m != Mode::Shortest && m != Mode::Fastest) continue;
+        if (graph.real_data && !graph.metrics_estimated && m != Mode::Shortest && m != Mode::Fastest) continue;
         base_opts.mode = m;
         RouteResult res = Dijkstra::find_path(graph, start_idx, end_idx, base_opts);
         if (res.found) {
@@ -95,7 +96,7 @@ ds::DynArray<RouteResult> Alternatives::generate_ranked_alternatives(
 
     // 2. Bounded edge-penalty reruns (up to 20 reruns)
     ds::HashMap<std::string, double> penalties;
-    const int kMaxReruns = 20;
+    const int kMaxReruns = graph.real_data ? std::min(8, 2 * (query.k_alternatives > 0 ? query.k_alternatives : 5) + 2) : 20;
 
     for (int rerun = 0; rerun < kMaxReruns; ++rerun) {
         if (candidates.empty()) break;

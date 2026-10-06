@@ -413,7 +413,8 @@ int main(int argc, char** argv) {
         query.max_distance_km = body["maxDistanceKm"].as_double(-1.0);
         query.k_alternatives = body["k"].as_int(graph.real_data ? 1 : 5);
         query.max_detour_ratio = body["maxDetourRatio"].as_double(-1.0);
-        if(graph.real_data && query.k_alternatives!=1) { json_error(res,"Real-data release currently supports one exact unconstrained objective route; set k=1"); return; }
+        if(graph.real_data && !graph.metrics_estimated && query.k_alternatives!=1) { json_error(res,"Real-data release currently supports one exact unconstrained objective route; set k=1"); return; }
+        if(graph.real_data && query.k_alternatives>5) { json_error(res,"k must be 1-5 on the real graph"); return; }
 
         // Parse weights if provided
         if (body.has_key("weights")) {
