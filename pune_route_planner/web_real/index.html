@@ -1,26 +1,28 @@
-<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pune tourist route planner</title><link rel="stylesheet" href="style.css">
-<header><h1>Pune tourist route planner</h1><p>Offline street map. Scenic, crowd and visit times are estimates, not live data.</p></header>
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pune Route Planner</title><link rel="stylesheet" href="style.css">
+<header class="top"><div class="brand"><span class="logo" aria-hidden="true"></span><div><h1>Pune Route Planner</h1><p>Heritage and riverfront trips, planned offline</p></div></div>
+<div class="actions"><button id="gpx" class="secondary" disabled>Export GPX</button><button id="share" class="primary">Share trip</button></div></header>
 <main>
-<section class="panel" aria-label="Trip settings">
-<label>From<select id="start"></select></label>
-<label>To<select id="end"></select></label>
-<label>Optimize<select id="mode"><option value="balanced">Balanced (estimate)</option><option value="shortest">Shortest distance</option><option value="fastest">Fastest (estimated)</option><option value="scenic">Most scenic (estimate)</option><option value="least_crowded">Least crowded (estimate)</option></select></label>
-<div class="row"><label>Leave at<input id="time" type="time" value="10:00"></label><label class="check"><input id="weekend" type="checkbox"> Weekend</label></div>
-<label>Alternatives<select id="k"><option value="1">Best route only</option><option value="2">Up to 2</option><option value="3">Up to 3</option></select></label>
-<fieldset><legend>Must visit (makes it a tour)</legend><div id="stops" class="stops"></div></fieldset>
-<button id="plan">Find route</button>
-<p id="status" role="status">Loading street graph...</p>
-<p id="summary"></p>
+<aside class="panel left" aria-label="Plan your trip">
+<div class="pair"><label class="wp a"><span>From</span><select id="start"></select></label><label class="wp b"><span>To</span><select id="end"></select></label></div>
+<label>Route preference<select id="mode"><option value="balanced">Recommended (balanced)</option><option value="shortest">Shortest distance</option><option value="fastest">Fastest</option><option value="scenic">Most scenic</option><option value="least_crowded">Least crowded</option></select></label>
+<div class="row"><label>Leave at<input id="time" type="time" value="10:00"></label><label>Route options<select id="k"><option value="1">Best route only</option><option value="2">Up to 2</option><option value="3">Up to 3</option></select></label></div>
+<label class="check"><input id="weekend" type="checkbox"><span>Weekend trip</span></label>
+<fieldset><legend>Places to visit <em>(adds a timed tour)</em></legend><div id="stops" class="stops"></div></fieldset>
+<button id="plan" class="primary wide">Find route</button>
+<p id="status" role="status">Loading map...</p>
+<fieldset class="whatif"><legend>Road closures</legend>
+<label class="check"><input id="blockmode" type="checkbox"><span>Tap a road on the map to close or reopen it</span></label>
+<div class="row1"><button id="undo" class="secondary" disabled>Undo last change</button></div><p id="edit"></p></fieldset>
+</aside>
+<section class="map"><canvas id="map" aria-label="Street map with the selected route. Drag to pan, scroll to zoom." tabindex="0"></canvas>
+<div class="tools"><button id="zin" class="secondary" aria-label="Zoom in">+</button><button id="zout" class="secondary" aria-label="Zoom out">-</button><button id="zfit" class="secondary" aria-label="Reset view">Reset</button></div>
+<div class="loader" aria-hidden="true"></div><p id="credit"></p></section>
+<aside class="panel right" id="results" aria-label="Your route">
+<button id="grab" class="grab" type="button" aria-label="Expand route details"><span></span></button>
+<div id="stats" class="stats"></div><p id="summary" class="sum"></p>
 <div id="cards" class="cards" aria-label="Route options"></div>
-<ol id="itinerary" class="itinerary"></ol>
-<div class="row"><button id="gpx" class="secondary" disabled>Download GPX</button><button id="share" class="secondary">Copy share link</button></div>
-<details id="dirs"><summary>Road-by-road directions</summary><ol id="steps"></ol></details>
-<fieldset><legend>What-if edits</legend>
-<label class="check"><input id="blockmode" type="checkbox"> Click the map to block or unblock a road</label>
-<button id="undo" class="secondary" disabled>Undo last edit</button><p id="edit"></p></fieldset>
-<p id="snap" class="small"></p>
-<details><summary>Data and limits</summary><p id="provenance" class="small"></p><p class="small">Live traffic and live crowd are unavailable. Scenic scores come from nearby parks, water and heritage features. Crowd curves, visit minutes and opening hours are curated planning estimates; check venue hours before travel. Approach snaps are not verified entrances or parking. Restricted roads and complex turn rules are conservatively excluded. Roads outside the bounded area are omitted. This is not turn-by-turn navigation.</p></details>
-</section>
-<section class="map"><div class="tools"><button id="zin" class="secondary" aria-label="Zoom in">+</button><button id="zout" class="secondary" aria-label="Zoom out">-</button><button id="zfit" class="secondary">Reset view</button></div>
-<canvas id="map" aria-label="Street network and selected route. Drag to pan, scroll to zoom." tabindex="0"></canvas><p id="credit"></p></section>
+<section class="tour" hidden><h2>Your itinerary</h2><ol id="itinerary" class="itinerary"></ol></section>
+<details id="dirs"><summary>Step-by-step directions</summary><ol id="steps"></ol></details>
+<details><summary>About these estimates</summary><p class="small">Scenic scores, crowd levels, visit times and opening hours are planning estimates, not live data. Live traffic is not available, so check venue hours before you travel. Routes avoid restricted roads and complex junctions. Roads outside central Pune are not included. This is not turn-by-turn navigation.</p></details>
+</aside>
 </main><script src="app.js"></script></html>
