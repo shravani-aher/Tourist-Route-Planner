@@ -75,7 +75,7 @@ for bad in ['missing-file.json',os.path.join(os.path.dirname(data),'../tests/fix
  r=subprocess.run([binary,'--data',bad],capture_output=True,timeout=20);assert r.returncode!=0
 print('Real graph, paths, unavailable metrics, production rejection passed')
 
-source=json.load(open(data))
+source=json.load(open(data,encoding='utf-8'))
 for mutate in [lambda d:d['nodes'].append(d['nodes'][0]),lambda d:d['roads'][0].update(u='unknown'),lambda d:d['roads'][0].update(distance_km=-1),lambda d:d['roads'][0].update(distance_km=1),lambda d:d['manifest'].update(source_sha256='x'*64),lambda d:d['attractions'][0].update(node_id='unknown'),lambda d:d['roads'][0].update(scenic=11),lambda d:d['roads'][0].pop('highway'),lambda d:d['attractions'][0].update(crowd_weekday=[1]),lambda d:d['attractions'][0].update(open_hour=20,close_hour=8)]:
  clone=json.loads(json.dumps(source));mutate(clone)
  with tempfile.NamedTemporaryFile(mode='w',suffix='.json',delete=False) as f:json.dump(clone,f);name=f.name

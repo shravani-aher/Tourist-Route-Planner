@@ -74,4 +74,4 @@ finally:
     p.terminate()
     try: p.wait(timeout=5)
     except subprocess.TimeoutExpired: p.kill(); p.wait()
-    if p.returncode not in (0, -15): raise RuntimeError(f'Server exited unexpectedly: {p.returncode}')
+    if p.returncode not in ((0, 1) if sys.platform == 'win32' else (0, -15)): raise RuntimeError(f'Server exited unexpectedly: {p.returncode}')

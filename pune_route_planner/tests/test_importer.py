@@ -10,7 +10,7 @@ class EnrichTests(unittest.TestCase):
   self.assertTrue(all(0<=x<=10 for x in wd+we));self.assertGreaterEqual(wd[16],wd[9]);self.assertGreaterEqual(we[16],wd[16])
  def test_meta_complete(self):
   import json
-  meta=json.load(open(p.parent/'attractions_meta.json'))
+  meta=json.load(open(p.parent/'attractions_meta.json',encoding='utf-8'))
   for code,m in meta['attractions'].items():self.assertTrue(0<m['open']<m['close']<=24 and m['visit_minutes']>0 and 0<=m['popularity']<=10,code)
 class Tests(unittest.TestCase):
  def test_access(self):

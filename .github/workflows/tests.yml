@@ -38,8 +38,12 @@ jobs:
           build/pune_route_planner/pune_route_planner --data pune_route_planner/data/pune_driving.json --web pune_route_planner/web_real --port 8088 > real-server.log 2>&1 &
           server=$!
           trap 'kill "$server"' EXIT
-          node pune_route_planner/tests/test_real_ui.cjs
-          node pune_route_planner/tests/test_real_ui_flows.cjs
+          for i in $(seq 60); do curl -sf http://127.0.0.1:8088/api/stats >/dev/null && break; sleep 1; done
+          set +e
+          node pune_route_planner/tests/test_real_ui.cjs > ui.log 2>&1; r1=$?
+          node pune_route_planner/tests/test_real_ui_flows.cjs >> ui.log 2>&1; r2=$?
+          tail -n 40 ui.log
+          if [ $r1 -ne 0 ] || [ $r2 -ne 0 ]; then echo "::error title=real UI tests failed::$(tail -c 3000 ui.log | sed ':a;N;$!ba;s/%/%25/g;s/\r//g;s/\n/%0A/g') SERVER: $(tail -c 500 real-server.log | tr '\n' ' ')"; exit 1; fi
   windows-build:
     runs-on: windows-latest
     steps:
