@@ -37,3 +37,4 @@ jobs:
           server=$!
           trap 'kill "$server"' EXIT
           node pune_route_planner/tests/test_real_ui.cjs
+          node pune_route_planner/tests/test_real_ui_flows.cjs

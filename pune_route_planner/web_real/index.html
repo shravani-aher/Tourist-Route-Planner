@@ -1,1 +1,25 @@
-<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pune driving routes</title><link rel="stylesheet" href="style.css"><header><h1>Pune driving routes</h1><p>Offline street map. No live conditions.</p></header><main><section class="controls"><label>From<select id="start"></select></label><label>To<select id="end"></select></label><label>Optimize<select id="mode"><option value="shortest">Distance</option><option value="fastest">Estimated time</option><option value="scenic">Most scenic (estimate)</option><option value="least_crowded">Least crowded (estimate)</option><option value="balanced">Balanced (estimate)</option></select></label><button id="plan">Find route</button><p id="status" role="status">Loading street graph...</p><p id="summary"></p><p id="snap"></p><details><summary>Data and limits</summary><p id="provenance"></p><p>Traffic, crowd, scenic ratings and visit duration: unavailable. Tours are disabled until visit durations are supplied. Approach snaps are not verified entrances or parking. Restricted/conditional access and complex turn approaches are conservatively excluded. Roads outside the bounded area are omitted. This is not turn-by-turn navigation.</p></details></section><section class="map"><canvas id="map" aria-label="Geographic street network and selected route"></canvas><p id="credit"></p></section></main><script src="app.js"></script></html>
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pune tourist route planner</title><link rel="stylesheet" href="style.css">
+<header><h1>Pune tourist route planner</h1><p>Offline street map. Scenic, crowd and visit times are estimates, not live data.</p></header>
+<main>
+<section class="panel" aria-label="Trip settings">
+<label>From<select id="start"></select></label>
+<label>To<select id="end"></select></label>
+<label>Optimize<select id="mode"><option value="balanced">Balanced (estimate)</option><option value="shortest">Shortest distance</option><option value="fastest">Fastest (estimated)</option><option value="scenic">Most scenic (estimate)</option><option value="least_crowded">Least crowded (estimate)</option></select></label>
+<div class="row"><label>Leave at<input id="time" type="time" value="10:00"></label><label class="check"><input id="weekend" type="checkbox"> Weekend</label></div>
+<label>Alternatives<select id="k"><option value="1">Best route only</option><option value="2">Up to 2</option><option value="3">Up to 3</option></select></label>
+<fieldset><legend>Must visit (makes it a tour)</legend><div id="stops" class="stops"></div></fieldset>
+<button id="plan">Find route</button>
+<p id="status" role="status">Loading street graph...</p>
+<p id="summary"></p>
+<div id="cards" class="cards" aria-label="Route options"></div>
+<ol id="itinerary" class="itinerary"></ol>
+<details id="dirs"><summary>Road-by-road directions</summary><ol id="steps"></ol></details>
+<fieldset><legend>What-if edits</legend>
+<label class="check"><input id="blockmode" type="checkbox"> Click the map to block or unblock a road</label>
+<button id="undo" class="secondary" disabled>Undo last edit</button><p id="edit"></p></fieldset>
+<p id="snap" class="small"></p>
+<details><summary>Data and limits</summary><p id="provenance" class="small"></p><p class="small">Live traffic and live crowd are unavailable. Scenic scores come from nearby parks, water and heritage features. Crowd curves, visit minutes and opening hours are curated planning estimates; check venue hours before travel. Approach snaps are not verified entrances or parking. Restricted roads and complex turn rules are conservatively excluded. Roads outside the bounded area are omitted. This is not turn-by-turn navigation.</p></details>
+</section>
+<section class="map"><div class="tools"><button id="zin" class="secondary" aria-label="Zoom in">+</button><button id="zout" class="secondary" aria-label="Zoom out">-</button><button id="zfit" class="secondary">Reset view</button></div>
+<canvas id="map" aria-label="Street network and selected route. Drag to pan, scroll to zoom." tabindex="0"></canvas><p id="credit"></p></section>
+</main><script src="app.js"></script></html>
